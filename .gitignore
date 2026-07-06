@@ -1,0 +1,4 @@
+*.env
+noteenv
+frontend
+*__pycache__
