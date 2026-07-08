@@ -1,21 +1,24 @@
-from fastapi import FastAPI,Request
+from typing import final
+from backend.database import SessionLocal
+from backend import database
+from fastapi import FastAPI,Request,BackgroundTasks,Depends
 from pydantic import BaseModel
-
+from sqlalchemy.orm import Session
 # pyrefly: ignore [missing-import]
 from sqlalchemy.orm import DeclarativeBase
-from backend.database import SessionLocal
+from backend.database import get_db
 from dotenv import load_dotenv
 import os
 from typing import Optional
 from sqlalchemy import Column,String,Integer,Text,ForeignKey
 import google.generativeai as genai
-import requests
+import httpx
 import json
 
 
 load_dotenv()
 note = FastAPI()
-db = SessionLocal()
+
 
 class Base(DeclarativeBase):
     pass
@@ -54,7 +57,7 @@ class Ticket(Base):
     id  = Column(Integer, primary_key = True)
     slack_id = Column(String,ForeignKey ('user_details.slack_id'))
     issue_text = Column(Text)
-    priority = Column(Integer)
+    priority = Column(String)
     category = Column(String)
     status = Column(String, default="active")
     suggested_fix = Column(Text)
@@ -92,9 +95,59 @@ def get_ai_data(issue_text):
         return dict()
 
 
+async def insert_ticket_atbackground(user_id:str,issue_text:str,user_name:str):
+    db = SessionLocal()
+    try:
+    
+        ai_response = get_ai_data(issue_text)
+    
+        tocken = os.getenv("BOT_AUTH_TOCKEN")
+        headers = {"Authorization":f"Bearer {tocken}"}
+        url = f"https://slack.com/api/users.info?user={user_id}"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
+            request_email = response.json()
+        
+
+        if request_email.get("ok"):
+            user_email = request_email.get('user',{}).get('profile',{}).get('email')
+            exists_user = db.query(User).filter(User.slack_id == user_id).first()
+            
+            if not exists_user:
+                create_user = CreateUser(slack_id = user_id,name = user_name,email=user_email)
+                insert_user(create_user)
+        
+            
+            issue_category = ai_response.get("category")
+            issue_priority = ai_response.get("priority")
+            suggested_fix_froai = ai_response.get("suggested_fix")
+
+            new_ticket = InserTicket(
+                slack_id=user_id,
+                issue_text=issue_text or "",
+                priority=issue_priority or "Low",
+                category=issue_category or "other",
+                suggested_fix=suggested_fix_froai or "No fix suggested"
+            )
+            ins = insert_to_ticket(new_ticket)
+            if ins:
+                return True
+            else:
+                return False
+    except Exception as e :
+        db.rollback()
+        print(f"Error : {e}")
+
+
+    finally:
+        db.close()
+            
+
+
 
 def insert_to_ticket(details:InserTicket):
-   
+    db= SessionLocal()
+
 
     new_ticket = Ticket(
         slack_id = details.slack_id,
@@ -112,75 +165,104 @@ def insert_to_ticket(details:InserTicket):
         print(f"Database insertion error: {e}")
         db.rollback()
         return False
+    finally:
+        db.close()
 
 
 def insert_admin(details:CreateAdmin):
+    db = SessionLocal()
     new_admin = Admin(
         slack_id = details.slack_id,
         email = details.email,
         role = details.role
     )
-    db.add(new_admin)
-    db.commit()
+    try:
+        db.add(new_admin)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(e)
 
 def insert_user(details:CreateUser):
+    db = SessionLocal()
     new_user = User(
         slack_id = details.slack_id,
         name = details.name,
         email = details.email
     )
-    db.add(new_user)
-    db.commit()
+    try:
+        db.add(new_user)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(e)
 
     
 ##---------------------Helpdesk Endpoint-------------------------
 @note.post('/webhook/ticket')
-async def webhook(request:Request):
+async def webhook(request:Request,background_tasks:BackgroundTasks):
 
     response = await request.form()
     user_id = response.get("user_id")
     user_name = response.get("user_name")
     issue_text = response.get("text")
 
-    ai_response = get_ai_data(issue_text)
-    print(ai_response)
+    background_tasks.add_task(insert_ticket_atbackground,user_id,issue_text,user_name)
+    
+    return {"text":"Complaint has been sent."}
 
-    tocken = os.getenv("BOT_AUTH_TOCKEN")
-    headers = {"Authorization":f"Bearer {tocken}"}
+
+
+@note.post('/webhook/listissue')
+async def resolve_issue(request:Request):
+    response = await request.form()
+    user_id = response.get('user_id')
+    user_name = response.get('user_name')
+    auth_tocken = os.getenv("BOT_AUTH_TOCKEN")
+    headers = {"Authorization":f"Bearer {auth_tocken}"}
     url = f"https://slack.com/api/users.info?user={user_id}"
-    request_email = requests.get(url,headers=headers).json()
 
-    if request_email.get("ok"):
-        user_email = request_email.get('user',{}).get('profile',{}).get('email')
-        exists_user = db.query(User).filter(User.slack_id == user_id).first()
-        if exists_user:
-            print("User found")
-        else:
-            print("User not found")
-            create_user = CreateUser(slack_id = user_id,name = user_name,email=user_email)
-            insert_user(create_user)
-            print("User aded succesfully")
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url,headers=headers)
+        request_email = response.json()
+
+    db = SessionLocal()
+    try:
+        if request_email.get("ok"):
+            user_email = request_email.get('user',{}).get('profile',{}).get('email')
+            admin_exist = db.query(Admin).filter(Admin.slack_id == user_id,Admin.email == user_email).first()
+            if admin_exist:
+                all_rows = db.query(Ticket).all()
+                message = []
+                for row in all_rows:
+                    message_text = f". *Ticket #{row.id}* | Priority: {row.priority} | Category: {row.category}\n _Issue text :{row.issue_text}"
+                    message.append(message_text)
+                final_message = "\n\n".join(message)
+                
+                return {"text":final_message}
+            else:
+                return {"text":"Acces denied"}
+    except Exception as e:
+        print (e)
+        return ""
+    finally:
+        db.close()
+
         
-        issue_category = ai_response.get("category")
-        issue_priority = ai_response.get("priority")
-        suggested_fix_froai = ai_response.get("suggested_fix")
 
-        new_ticket = InserTicket(
-            slack_id=user_id,
-            issue_text=issue_text or "",
-            priority=issue_priority or "Low",
-            category=issue_category or "other",
-            suggested_fix=suggested_fix_froai or "No fix suggested"
-        )
-        ins = insert_to_ticket(new_ticket)
-        if ins:
-            print("Inserted the  ticket")
 
-    # print(reuqest_email)
-    print(user_email)
-    print(f"{user_id},{user_name},{issue_text}")
 
-    return "We will resolve it soon."
+
+
+
+     
+
+
+    
+
+
+
+
 
 
 
