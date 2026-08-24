@@ -5,6 +5,7 @@ from backend.crud import (
     background_listissue,
     backround_procces_resolve
 )
+from backend.schemas import CreateUser
 from logger import logger
 from backend.sla import escalate_active_tickets
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -33,10 +34,10 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     user_name = response.get("user_name")
     issue_text = response.get("text")
 
-    is_verified = await verify_admin(user_id, check_type="user")
-    if not is_verified:
-        return {"text": "Acces denied"}
-
+    # is_verified = await verify_admin(user_id, check_type="user")
+    # if not is_verified :
+    #     return {'text':'Acces denied'}
+    
     background_tasks.add_task(insert_ticket_atbackground, user_id, issue_text, user_name)
     
     return {"text": "Complaint has been sent."}
