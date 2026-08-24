@@ -153,7 +153,7 @@ async def background_listissue(user_id: str, response_url: str):
 
         db = SessionLocal()
         try:
-            all_rows = db.query(Ticket).order_by(Ticket.id.desc()).limit(15).all()
+            all_rows = db.query(Ticket).filter(Ticket.status=='active').order_by(Ticket.id.desc()).limit(15).all()
             if not all_rows:
                 payload = {'text': 'No active tickets'}
             else:

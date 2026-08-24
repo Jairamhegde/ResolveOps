@@ -86,8 +86,7 @@ async def add_admin(request: Request, background_tasks: BackgroundTasks):
     user_id = form.get('user_id')
     slack_id = form.get("text", "").strip()
     background_tasks.add_task(insert_admin_background, user_id, slack_id, response_url)
-    return {'text': 'Processing request...'}
-
+    return {'text': f'Processing request...:{slack_id}'}
 
 
     # , dependencies=[Depends(verify_slack_signature)]
