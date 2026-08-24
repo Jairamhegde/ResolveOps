@@ -79,7 +79,7 @@ async def resolve_ticket(resolve: Request, background_tasks: BackgroundTasks):
 async def health_check():
     return {"status": "ok"}
 
-@app.post('/webhook/add-admin', dependencies=[Depends(verify_slack_signature)])
+@app.post('/webhook/add-admin')
 async def add_admin(request: Request, background_tasks: BackgroundTasks):
     form = await request.form()
     response_url = form.get('response_url')
@@ -90,7 +90,7 @@ async def add_admin(request: Request, background_tasks: BackgroundTasks):
 
 
 
-    
+    # , dependencies=[Depends(verify_slack_signature)]
 
 
     

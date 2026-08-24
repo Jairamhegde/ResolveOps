@@ -172,6 +172,19 @@ async def insert_admin_background(user_id: str, slack_id: str, response_url: str
     if target_slack_id.startswith("<@") and target_slack_id.endswith(">"):
         target_slack_id = target_slack_id[2:-1].split('|')[0]
 
+    # Strip leading '@' if the admin typed '@username' literally
+    target_slack_id = target_slack_id.lstrip('@')
+
+    # If it is a username instead of a Slack ID (Slack IDs usually start with 'U' and are 9+ chars)
+    if not (target_slack_id.startswith('U') and len(target_slack_id) >= 9):
+        db = SessionLocal()
+        try:
+            local_user = db.query(User).filter(User.name == target_slack_id).first()
+            if local_user:
+                target_slack_id = local_user.slack_id
+        finally:
+            db.close()
+
     is_admin = await verify_admin(user_id, 'admin')
     async with httpx.AsyncClient() as client:
         if not is_admin:
