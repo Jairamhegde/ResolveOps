@@ -4,3 +4,6 @@ frontend
 *__pycache__
 questions.md
 *.zip
+backend/url.py
+utils/
+log.log

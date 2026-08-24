@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 from backend.database import get_db
 from backend.models import Ticket
 from backend.database import SessionLocal
@@ -25,7 +25,7 @@ def escalate_active_tickets():
             sla_window = get_sla_window(ticket.priority)
             if sla_window is None:
                 continue
-            window_age = datetime.now() - ticket.created_at
+            window_age = datetime.now(timezone.utc) - ticket.created_at
 
             if window_age > sla_window:
                 ticket.priority -= 1
