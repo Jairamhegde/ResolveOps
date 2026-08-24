@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Text, ForeignKey
+from sqlalchemy import Column, String, Integer, Text, ForeignKey,DateTime
 from backend.database import Base
 
 class User(Base):
@@ -16,6 +16,7 @@ class Ticket(Base):
     category = Column(String)
     status = Column(String, default="active")
     suggested_fix = Column(Text)
+    created_at = Column(DateTime(timezone=True))
 
 class Admin(Base):
     __tablename__ = "admin"

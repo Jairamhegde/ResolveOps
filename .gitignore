@@ -3,4 +3,4 @@ noteenv
 frontend
 *__pycache__
 questions.md
-ResolveOps.zip
+*.zip

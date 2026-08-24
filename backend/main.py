@@ -5,11 +5,28 @@ from backend.crud import (
     background_listissue,
     backround_procces_resolve
 )
-note = FastAPI()
+from logger import logger
+from backend.sla import escalate_active_tickets
+from apscheduler.schedulers.background import BackgroundScheduler
+
+app = FastAPI()
+
+scheduler = BackgroundScheduler()
+
+@app.on_event('startup')
+def start_scheduler():
+    scheduler.add_job(escalate_active_tickets,'interval',minutes=15, id="sla_escalation_job")
+    scheduler.start()
+    logger.info("Scheduler started")
+
+@app.on_event('shutdown')
+def shutdown_scheduler():
+    scheduler.shutdown()
+    logger.info("Scheduler shutdown.")
 
 ##---------------------Helpdesk Endpoint-------------------------
 
-@note.post('/webhook/ticket', dependencies=[Depends(verify_slack_signature)])
+@app.post('/webhook/ticket', dependencies=[Depends(verify_slack_signature)])
 async def webhook(request: Request, background_tasks: BackgroundTasks):
     response = await request.form()
     user_id = response.get("user_id")
@@ -25,7 +42,7 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     return {"text": "Complaint has been sent."}
 
 
-@note.post('/webhook/listissue', dependencies=[Depends(verify_slack_signature)])
+@app.post('/webhook/listissue', dependencies=[Depends(verify_slack_signature)])
 async def resolve_issue(request: Request, background_tasks: BackgroundTasks):
     response = await request.form()
     user_id = response.get('user_id')
@@ -38,7 +55,7 @@ async def resolve_issue(request: Request, background_tasks: BackgroundTasks):
     return {"text": "Fetching tickets..."}
 
 
-@note.post('/webhook/resolve', dependencies=[Depends(verify_slack_signature)])
+@app.post('/webhook/resolve', dependencies=[Depends(verify_slack_signature)])
 async def resolve_ticket(resolve: Request, background_tasks: BackgroundTasks):
     form = await resolve.form()
     response_url = form.get('response_url')
