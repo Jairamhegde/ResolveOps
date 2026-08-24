@@ -11,12 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 async def verify_admin(user_id: str, check_type: str = "admin"):
-    """
-    Looks up the slack user's email via Slack API, then checks if
-    that user exists in the admin table (check_type="admin")
-    or the regular user table (check_type="user").
-    Returns True if verified, False otherwise.
-    """
+
     tocken = os.getenv("BOT_AUTH_TOCKEN")
     headers = {"Authorization": f"Bearer {tocken}"}
     url = f"https://slack.com/api/users.info?user={user_id}"
@@ -53,17 +48,17 @@ async def verify_slack_signature(request: Request):
     slack_signature = request.headers.get("X-Slack-Signature")
 
     if not signing_signature:
-        print("❌ SIGNING_SECRETE is missing in .env")
+       
         raise HTTPException(status_code=500, detail="Server configuration error: SIGNING_SECRETE missing")
 
     if not slack_signature or not time_stamp:
-        print("❌ Missing Slack Headers")
+   
         raise HTTPException(status_code=403, detail="Missing Slack headers")
     
     time_diff = abs(time.time() - int(time_stamp))
-    print(f"🕒 Clock Difference: {time_diff} seconds")
+
     if time_diff > 60 * 5:
-        print("❌ Request too old (Clock drift > 5 mins)")
+   
         raise HTTPException(status_code=403, detail="Request too old")
     
     body = await request.body() 

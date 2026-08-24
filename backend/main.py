@@ -5,7 +5,6 @@ from backend.crud import (
     background_listissue,
     backround_procces_resolve
 )
-
 note = FastAPI()
 
 ##---------------------Helpdesk Endpoint-------------------------
