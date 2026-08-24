@@ -1,3 +1,4 @@
+from logger import logger
 import os
 import httpx
 from backend.database import SessionLocal
@@ -108,7 +109,11 @@ def build_ticket_blocks(tickets):
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Ticket #{row.id}* {emoji} *{row.priority}* | _{row.category}_\n{row.issue_text}"
+                "text": (
+                    f"{row.id}.*Ticket* | *P{row.priority}* | _{row.category}_\n"
+                    f"👤 <@{row.slack_id}>\n"
+                    f"{row.issue_text}"
+                )
             }
         })
         blocks.append({"type": "divider"})
@@ -134,7 +139,7 @@ async def backround_procces_resolve(user_id: str, ticket_id: int, response_url: 
             ticket_status.status = 'resolved'
             db.commit()
             
-            payload = {"text": f"✅ Resolved ticket #{ticket_id}."}
+            payload = {"text": f"Resolved ticket :{ticket_id}."}
             await client.post(response_url, json=payload)
         finally:
             db.close()
@@ -160,3 +165,87 @@ async def background_listissue(user_id: str, response_url: str):
             await client.post(response_url, json={"text": "Error fetching tickets."})
         finally:
             db.close()
+
+async def insert_admin_background(user_id: str, slack_id: str, response_url: str):
+    # Clean Slack mention format (e.g. <@U12345678|username> -> U12345678)
+    target_slack_id = slack_id
+    if target_slack_id.startswith("<@") and target_slack_id.endswith(">"):
+        target_slack_id = target_slack_id[2:-1].split('|')[0]
+
+    is_admin = await verify_admin(user_id, 'admin')
+    async with httpx.AsyncClient() as client:
+        if not is_admin:
+            payload = {'text': 'Access Denied. You are not an admin.'}
+            await client.post(response_url, json=payload)
+            return
+
+        if not target_slack_id:
+            payload = {'text': 'Please specify a user. Example: `/add-admin @username`'}
+            await client.post(response_url, json=payload)
+            return
+
+        try:
+            token = os.getenv("BOT_AUTH_TOCKEN")
+            headers = {"Authorization": f"Bearer {token}"}
+            url = f"https://slack.com/api/users.info?user={target_slack_id}"
+            response = await client.get(url, headers=headers)
+            user_data = response.json()
+            
+            if user_data.get("ok"):
+                profile = user_data.get('user', {}).get('profile', {})
+                user_email = profile.get('email')
+                user_name = user_data.get('user', {}).get('real_name') or user_data.get('user', {}).get('name', 'IT Support')
+                
+                if not user_email:
+                    payload = {'text': f'Failed to retrieve email for <@{target_slack_id}>.'}
+                    await client.post(response_url, json=payload)
+                    return
+                
+                status = await add_admin(target_slack_id, user_name, user_email)
+                
+                if status == "success":
+                    payload = {'text': f'Added <@{target_slack_id}> as admin.'}
+                elif status == "already_admin":
+                    payload = {'text': f'<@{target_slack_id}> is already an admin.'}
+                else:
+                    payload = {'text': 'Failed to add admin due to a database error.'}
+                
+                await client.post(response_url, json=payload)
+            else:
+                payload = {'text': f'Slack API Error: Could not find user information.'}
+                await client.post(response_url, json=payload)
+                logger.error(f"Slack API error fetching user details: {user_data.get('error')}")
+
+        except Exception as e:
+            logger.error(f"Failed to insert admin: {e}")
+            await client.post(response_url, json={'text': 'Internal server error occurred.'})
+     
+async def add_admin(slack_id: str, name: str, email: str, role: str = 'it support'):
+    db = SessionLocal()
+    try:
+        #check user already exists
+        user = db.query(User).filter(User.slack_id == slack_id).first()
+        if not user:
+            new_user = User(slack_id=slack_id, name=name, email=email)
+            db.add(new_user)
+            db.flush() 
+
+        #check if already admin
+        existing_admin = db.query(Admin).filter(Admin.slack_id == slack_id).first()
+        if existing_admin:
+            return "already_admin"
+        #else add admin
+        new_admin = Admin(
+            slack_id=slack_id,
+            email=email,
+            role=role
+        )
+        db.add(new_admin)
+        db.commit()
+        return "success"
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Admin database insertion failed: {e}")
+        return "failed"
+    finally:
+        db.close()

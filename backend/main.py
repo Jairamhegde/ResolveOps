@@ -3,9 +3,10 @@ from backend.auth import verify_slack_signature, verify_admin
 from backend.crud import (
     insert_ticket_atbackground,
     background_listissue,
-    backround_procces_resolve
+    backround_procces_resolve,
+    insert_admin_background
 )
-from backend.schemas import CreateUser
+
 from logger import logger
 from backend.sla import escalate_active_tickets
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -16,7 +17,7 @@ scheduler = BackgroundScheduler()
 
 @app.on_event('startup')
 def start_scheduler():
-    scheduler.add_job(escalate_active_tickets,'interval',minutes=15, id="sla_escalation_job")
+    scheduler.add_job(escalate_active_tickets, 'interval', minutes=15, id="sla_escalation_job")
     scheduler.start()
     logger.info("Scheduler started")
 
@@ -72,4 +73,24 @@ async def resolve_ticket(resolve: Request, background_tasks: BackgroundTasks):
     ticket_id = int(command_text)
     
     background_tasks.add_task(backround_procces_resolve, user_id, ticket_id, response_url)
-    return {"text": "Resolving... ⏳"}
+    return {"text": "Resolving..."}
+
+@app.get('/api/health')
+async def health_check():
+    return {"status": "ok"}
+
+@app.post('/webhook/add-admin', dependencies=[Depends(verify_slack_signature)])
+async def add_admin(request: Request, background_tasks: BackgroundTasks):
+    form = await request.form()
+    response_url = form.get('response_url')
+    user_id = form.get('user_id')
+    slack_id = form.get("text", "").strip()
+    background_tasks.add_task(insert_admin_background, user_id, slack_id, response_url)
+    return {'text': 'Processing request...'}
+
+
+
+    
+
+
+    
