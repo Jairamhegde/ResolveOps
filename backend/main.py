@@ -31,15 +31,18 @@ def shutdown_scheduler():
 @app.post('/webhook/ticket', dependencies=[Depends(verify_slack_signature)])
 async def webhook(request: Request, background_tasks: BackgroundTasks):
     response = await request.form()
+    response_url = response.get("response_url")
     user_id = response.get("user_id")
     user_name = response.get("user_name")
     issue_text = response.get("text")
 
+
+    # Removed user identification temporarily for demonstration
     # is_verified = await verify_admin(user_id, check_type="user")
     # if not is_verified :
     #     return {'text':'Acces denied'}
     
-    background_tasks.add_task(insert_ticket_atbackground, user_id, issue_text, user_name)
+    background_tasks.add_task(insert_ticket_atbackground, user_id, issue_text, user_name,response_url)
     
     return {"text": "Complaint has been sent."}
 

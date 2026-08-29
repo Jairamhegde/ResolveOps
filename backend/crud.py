@@ -7,7 +7,7 @@ from backend.schemas import InserTicket, CreateAdmin, CreateUser
 from backend.ai import get_ai_data
 from backend.auth import verify_admin
 
-async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: str):
+async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: str,response_url:str):
     db = SessionLocal()
     try:
         ai_response = get_ai_data(issue_text)
@@ -30,6 +30,10 @@ async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: s
             issue_category = ai_response.get("category")
             issue_priority = ai_response.get("priority")
             suggested_fix_froai = ai_response.get("suggested_fix")
+
+            async with httpx.AsyncClient() as client:
+                payload = {"text": f"*Suggested Fix:*\n{suggested_fix_froai}"}
+                await client.post(response_url, json=payload)
 
             new_ticket = InserTicket(
                 slack_id=user_id,
