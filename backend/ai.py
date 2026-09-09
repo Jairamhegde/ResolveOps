@@ -13,8 +13,8 @@ def get_ai_data(issue_text):
     Return a raw JSON object with exactly these three keys:
     - "category": (Choose one: Network, Hardware, Software, Account Access, or Other)
     - "priority": (Choose one: between 1 to 5. 1 as high priority and 5 is lowest priority)
-    - "suggested_fix": (A short, 1-sentence troubleshooting step for the IT admin)
-    
+    - "suggested_fix": (A short, 1-sentence troubleshooting step for the user)
+    if the issue text is not clear. or if it looks spam. return suggested fix as Not valid request.
     Return ONLY the JSON. Do not use markdown blocks like ```json.
     """
     try:

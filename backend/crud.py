@@ -1,11 +1,15 @@
+import json
 from logger import logger
 import os
+import time
+from sqlalchemy import Date,cast
 import httpx
 from backend.database import SessionLocal
 from backend.models import User, Ticket, Admin
 from backend.schemas import InserTicket, CreateAdmin, CreateUser
 from backend.ai import get_ai_data
 from backend.auth import verify_admin
+from datetime import datetime
 
 async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: str,response_url:str):
     db = SessionLocal()
@@ -26,6 +30,13 @@ async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: s
             if not exists_user:
                 create_user = CreateUser(slack_id=user_id, name=user_name, email=user_email)
                 insert_user(create_user)
+            if exists_user:
+                ticket = db.query(Ticket).filter(Ticket.slack_id == user_id,cast(Ticket.created_at,Date)==datetime.now().date()).all()
+                if len(ticket) > 5:
+                    payload={'text':'No more requests can be submitted today.'}
+                    await client.post(response_url,json=payload)
+                    return False
+                
         
             issue_category = ai_response.get("category")
             issue_priority = ai_response.get("priority")
@@ -41,6 +52,7 @@ async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: s
                 priority=issue_priority or 5,
                 category=issue_category or "other",
                 suggested_fix=suggested_fix_froai or "No fix suggested"
+                
             )
             ins = insert_to_ticket(new_ticket)
             if ins:
@@ -49,7 +61,8 @@ async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: s
                 return False
     except Exception as e:
         db.rollback()
-        print(f"Error : {e}")
+        payload = {"text": f"Server is not active."}
+        await client.post(response_url, json=payload)
     finally:
         db.close()
 
@@ -145,6 +158,10 @@ async def backround_procces_resolve(user_id: str, ticket_id: int, response_url: 
             
             payload = {"text": f"Resolved ticket :{ticket_id}."}
             await client.post(response_url, json=payload)
+        except:
+            payload = {"text": f"Server is not active."}
+            await client.post(response_url, json=payload)
+
         finally:
             db.close()
 
@@ -165,7 +182,6 @@ async def background_listissue(user_id: str, response_url: str):
             
             await client.post(response_url, json=payload)
         except Exception as e:
-            print(e)
             await client.post(response_url, json={"text": "Error fetching tickets."})
         finally:
             db.close()
@@ -266,3 +282,84 @@ async def add_admin(slack_id: str, name: str, email: str, role: str = 'it suppor
         return "failed"
     finally:
         db.close()
+
+def build_gitpushdetail_block(detail: dict):
+    modified_files = detail.get('modified', [])
+    # Format the list of files nicely, or show 'None'
+    if modified_files:
+        modified_text = ", ".join(f"`{f}`" for f in modified_files)
+    else:
+        modified_text = "`None`"
+        
+    # Format the commit message as a blockquote for a modern look
+    message = detail.get('message', 'No message provided')
+    quoted_message = f"> {message.replace('\n', '\n> ')}"
+
+    block = [
+        {
+            "type": "header", 
+            "text": {"type": "plain_text", "text": "🔹New GitHub Push", "emoji": True}
+        },
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"*Pushed by:* @{detail.get('name')}"},
+                {"type": "mrkdwn", "text": f"*Date:* <!date^{int(time.time())}^{{date_short_pretty}} at {{time}}|{detail.get('date')}>"} 
+            ]
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Event Type:*\n`{detail.get('event')}`"},
+                {"type": "mrkdwn", "text": f"*Files Changed:*\n`{len(modified_files)}`"}
+            ]
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Modified Files:*\n{modified_text}"}
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Commit Message:*\n{quoted_message}"}
+        }
+    ]
+    return block
+
+def build_gitprdetail_block(detail: dict):
+    # Format the PR description as a blockquote
+    body = detail.get('body') or 'No description provided'
+    quoted_body = f"> {body.replace('\n', '\n> ')}"
+
+    block = [
+        {
+            "type": "header", 
+            "text": {"type": "plain_text", "text": "🔀 Pull Request Update", "emoji": True}
+        },
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"*Triggered by:* @{detail.get('user')}"},
+                {"type": "mrkdwn", "text": f"*Repository:* {detail.get('repo')}"} 
+            ]
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Action:*\n`{detail.get('action')}`"},
+                {"type": "mrkdwn", "text": f"*Status:*\n`{detail.get('state')}`"}
+            ]
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Title:*\n<{detail.get('url')}|{detail.get('title')}>"}
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Description:*\n{quoted_body}"}
+        }
+    ]
+    return block

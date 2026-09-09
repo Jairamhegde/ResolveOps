@@ -1,17 +1,26 @@
-from fastapi import FastAPI, Request, BackgroundTasks, Depends
-from backend.auth import verify_slack_signature, verify_admin
+
+from h11._abnf import status_code
+from fastapi import HTTPException
+from typing import Dict, Optional, Any
+from fastapi import FastAPI, Request, BackgroundTasks, Depends, Header
+from backend.auth import verify_slack_signature, verify_admin, verify_github_signature
 from backend.crud import (
     insert_ticket_atbackground,
     background_listissue,
     backround_procces_resolve,
-    insert_admin_background
+    insert_admin_background,
+    build_gitpushdetail_block,
+    build_gitprdetail_block
 )
-
+import httpx
+from backend.models import GitRequest
 from logger import logger
 from backend.sla import escalate_active_tickets
+from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
-
+import os
 app = FastAPI()
+load_dotenv()
 
 scheduler = BackgroundScheduler()
 
@@ -36,14 +45,7 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     user_name = response.get("user_name")
     issue_text = response.get("text")
 
-
-    # Removed user identification temporarily for demonstration
-    # is_verified = await verify_admin(user_id, check_type="user")
-    # if not is_verified :
-    #     return {'text':'Acces denied'}
-    
     background_tasks.add_task(insert_ticket_atbackground, user_id, issue_text, user_name,response_url)
-    
     return {"text": "Complaint has been sent."}
 
 
@@ -82,7 +84,7 @@ async def resolve_ticket(resolve: Request, background_tasks: BackgroundTasks):
 async def health_check():
     return {"status": "ok"}
 
-@app.post('/webhook/add-admin')
+@app.post('/webhook/add-admin',dependencies=[Depends(verify_slack_signature)])
 async def add_admin(request: Request, background_tasks: BackgroundTasks):
     form = await request.form()
     response_url = form.get('response_url')
@@ -91,8 +93,100 @@ async def add_admin(request: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(insert_admin_background, user_id, slack_id, response_url)
     return {'text': f'Processing request...:{slack_id}'}
 
+@app.post("/webhook/github",dependencies=[Depends(verify_github_signature)])
+async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[str] = Header(None)):
+    if not x_github_event:
+        return {"status": "ignored", "reason": "No event header"}
 
-    # , dependencies=[Depends(verify_slack_signature)]
+    channel = {'InternIQ':'C0C1CDUGQ2C','HybridGuard':'C0C0CV1EWG1'}
 
-
+    reponame = payload.get('repository',{}).get('name')
     
+    # 1. Handle unknown repositories safely
+    channel_id = channel.get(reponame)
+    if not channel_id:
+        return {"status": "ignored", "reason": f"No channel mapping for repository: {reponame}"}
+
+    # Handle Push Events
+    if x_github_event == "push" :
+        repo_name = payload.get('repository', {}).get('name', "")
+        commit_details = payload.get('head_commit', {})
+        
+        if commit_details:
+            commiter_name = commit_details.get('author', {}).get('username', "")
+            comm_mess = commit_details.get("message")
+            date = commit_details.get('author', {}).get('date', "")
+            modified_file = commit_details.get("modified", [])
+            
+            details = {
+                'event': 'push',
+                'name': commiter_name,
+                'date': date,
+                'modified': modified_file,
+                'message': comm_mess
+            }
+            block = build_gitpushdetail_block(detail=details)
+
+            message = {
+                'channel': channel_id,
+                'text': f"New push by {commiter_name}",
+                'blocks': block
+            }
+            
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    "https://slack.com/api/chat.postMessage",
+                    headers={
+                        "Authorization": f"Bearer {os.getenv('BOT_AUTH_TOCKEN')}",
+                        "Content-Type": "application/json"
+                    },
+                    json=message
+                )
+                
+    # Handle Pull Request Events
+    elif x_github_event == "pull_request":
+        action = payload.get("action")
+        pr_data = payload.get("pull_request", {})
+        repo_name = payload.get("repository", {}).get("name", "")
+        
+        pr_user = pr_data.get("user", {}).get("login", "Unknown")
+        pr_title = pr_data.get("title", "")
+        pr_body = pr_data.get("body", "")
+        pr_state = pr_data.get("state", "")
+        pr_url = pr_data.get("html_url", "")
+        
+        details = {
+            "action": action,
+            "user": pr_user,
+            "title": pr_title,
+            "body": pr_body,
+            "state": pr_state,
+            "url": pr_url,
+            "repo": repo_name
+        }
+        
+        try:
+            block = build_gitprdetail_block(detail=details)
+        except NameError:
+            block = [
+                {"type": "section", "text": {"type": "mrkdwn", "text": f"🔀 *PR {action}* by @{pr_user}"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f"*{pr_title}*"}}
+            ]
+
+        message = {
+            'channel': channel_id,  
+            'text': f"PR {action} by {pr_user}",
+            'blocks': block
+        }
+        
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={
+                    "Authorization": f"Bearer {os.getenv('BOT_AUTH_TOCKEN')}",
+                    "Content-Type": "application/json"
+                },
+                json=message
+            )
+
+    return {'status': 'ok'}

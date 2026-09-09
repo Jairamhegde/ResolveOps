@@ -38,10 +38,5 @@ def escalate_active_tickets():
         db.close()
 
 
-
-    
-
-
-
 if __name__ == "__main__":
     print(escalate_active_tickets())

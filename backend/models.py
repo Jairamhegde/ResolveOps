@@ -1,5 +1,8 @@
 from sqlalchemy import Column, String, Integer, Text, ForeignKey,DateTime
 from backend.database import Base
+from datetime import datetime
+from pydantic import BaseModel
+from typing import Dict, Any
 
 class User(Base):
     __tablename__ = "user_details"
@@ -16,7 +19,7 @@ class Ticket(Base):
     category = Column(String)
     status = Column(String, default="active")
     suggested_fix = Column(Text)
-    created_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True),default=datetime.now)
 
 class Admin(Base):
     __tablename__ = "admin"
@@ -24,3 +27,9 @@ class Admin(Base):
     slack_id = Column(String, ForeignKey("user_details.slack_id"))
     email = Column(Text)
     role = Column(String)
+
+
+class GitRequest(BaseModel):
+    repository: Dict[str, Any]
+
+

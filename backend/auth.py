@@ -1,3 +1,5 @@
+from h11._abnf import status_code
+from grpc import StatusCode
 import os
 import time
 import hmac
@@ -71,3 +73,21 @@ async def verify_slack_signature(request: Request):
 
     if not hmac.compare_digest(my_signature, slack_signature):
         raise HTTPException(status_code=403, detail="Invalid signature")
+
+github_secrete = os.getenv('GITHUB_SECRETE')
+async def verify_github_signature(request:Request):
+    github_signature = request.headers.get("X-Hub-Signature-256")
+    if not github_signature:
+        raise HTTPException (status_code = 403,detail="No github signature.." )
+    body = await request.body()
+    if not github_secrete:
+        raise HTTPException(status_code=500, detail='No github secrete found.')
+    hashed = hmac.new(
+        github_secrete.encode('utf-8'),
+        body,
+        digestmod=hashlib.sha256
+    )
+    sign = "sha256="+hashed.hexdigest()
+    com = hmac.compare_digest(sign,github_signature)
+    if not com:
+        raise HTTPException(status_code=403,detail="Invalid github signature.")
