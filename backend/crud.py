@@ -1,5 +1,3 @@
-from backend import url
-import json
 from logger import logger
 import os
 import time

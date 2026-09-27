@@ -1,5 +1,3 @@
-from h11._abnf import status_code
-from grpc import StatusCode
 import os
 import time
 import hmac

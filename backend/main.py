@@ -1,9 +1,4 @@
-
-from google.api_core.exceptions import exception_class_for_grpc_status
-from sqlalchemy import except_
 from copy import Error
-from h11._abnf import status_code
-from fastapi import HTTPException
 from typing import Dict, Optional, Any
 from fastapi import FastAPI, Request, BackgroundTasks, Depends, Header
 from backend.auth import verify_slack_signature, verify_admin, verify_github_signature
@@ -17,7 +12,6 @@ from backend.crud import (
     build_workflow_detail_block
 )
 import httpx
-from backend.models import GitRequest
 from logger import logger
 from backend.sla import escalate_active_tickets
 from dotenv import load_dotenv
