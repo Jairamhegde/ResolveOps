@@ -1,3 +1,4 @@
+from backend import url
 import json
 from logger import logger
 import os
@@ -335,7 +336,7 @@ def build_gitprdetail_block(detail: dict):
     block = [
         {
             "type": "header", 
-            "text": {"type": "plain_text", "text": "🔀 Pull Request Update", "emoji": True}
+            "text": {"type": "plain_text", "text": "Pull Request Update", "emoji": True}
         },
         {
             "type": "context",
@@ -363,3 +364,35 @@ def build_gitprdetail_block(detail: dict):
         }
     ]
     return block
+
+
+def build_workflow_detail_block(event, name, status, conclusion, html_url):
+    block = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"Workflow Run: {name}",
+                "emoji": True
+            }
+        },
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"*Event:* `{event}`"},
+                {"type": "mrkdwn", "text": f"*Status:* {status}"},
+                {"type": "mrkdwn", "text": f"*Conclusion:* {conclusion}"}
+            ]
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"<{html_url}|View Workflow Run on GitHub>"
+            }
+        }
+    ]
+    return block
+
+

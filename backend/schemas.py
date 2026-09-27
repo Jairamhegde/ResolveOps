@@ -18,3 +18,8 @@ class CreateUser(BaseModel):
     slack_id: str
     name: str
     email: str
+
+class AiResponseModel(BaseModel):
+    category : str
+    priority: int
+    suggested_fix : str

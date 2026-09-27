@@ -39,4 +39,4 @@ def escalate_active_tickets():
 
 
 if __name__ == "__main__":
-    print(escalate_active_tickets())
+    pass
