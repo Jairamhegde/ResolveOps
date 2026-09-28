@@ -1,4 +1,3 @@
-from copy import Error
 from typing import Dict, Optional, Any
 from fastapi import FastAPI, Request, BackgroundTasks, Depends, Header
 from backend.auth import verify_slack_signature, verify_admin, verify_github_signature
@@ -92,31 +91,36 @@ async def add_admin(request: Request, background_tasks: BackgroundTasks):
     return {'text': f'Processing request...:{slack_id}'}
 
 # 
-@app.post("/webhook/github",dependencies=[Depends(verify_github_signature)])
-async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[str] = Header(None)):
+@app.post("/webhook/github", dependencies=[Depends(verify_github_signature)])
+async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[str] = Header(None, alias="X-GitHub-Event")):
     if not x_github_event:
         return {"status": "ignored", "reason": "No event header"}
-    x_github_event = "workflow_run"
-    try:
-        channel = {'InternIQ':'C0C1CDUGQ2C','HybridGuard':'C0C0CV1EWG1'}
 
-        reponame = payload.get('repository',{}).get('name')
+    if x_github_event == "ping":
+        logger.info("GitHub ping event received successfully")
+        return {"status": "ok", "message": "Pong! Webhook configured successfully."}
+
+    try:
+        channel = {'InternIQ': 'C0C1CDUGQ2C', 'HybridGuard': 'C0C0CV1EWG1'}
+
+        repo_info = payload.get('repository') or {}
+        reponame = repo_info.get('name')
         
-       
         channel_id = channel.get(reponame)
         if not channel_id:
+            logger.info(f"Ignoring GitHub event: no channel mapping for repository '{reponame}'")
             return {"status": "ignored", "reason": f"No channel mapping for repository: {reponame}"}
 
- 
-        if x_github_event == "push" :
-            repo_name = payload.get('repository', {}).get('name', "")
-            commit_details = payload.get('head_commit', {})
+        bot_token = (os.getenv('BOT_AUTH_TOCKEN') or os.getenv('BOT_AUTH_TOKEN') or os.getenv('SLACK_BOT_TOKEN') or "").strip()
+
+        if x_github_event == "push":
+            commit_details = payload.get('head_commit') or {}
             
             if commit_details:
-                commiter_name = commit_details.get('author', {}).get('username', "")
-                comm_mess = commit_details.get("message")
+                commiter_name = commit_details.get('author', {}).get('username') or commit_details.get('author', {}).get('name') or "Unknown"
+                comm_mess = commit_details.get("message") or "No commit message"
                 date = commit_details.get('author', {}).get('date', "")
-                modified_file = commit_details.get("modified", [])
+                modified_file = commit_details.get("modified") or []
                 
                 details = {
                     'event': 'push',
@@ -137,21 +141,22 @@ async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[s
                     await client.post(
                         "https://slack.com/api/chat.postMessage",
                         headers={
-                            "Authorization": f"Bearer {os.getenv('BOT_AUTH_TOCKEN')}",
+                            "Authorization": f"Bearer {bot_token}",
                             "Content-Type": "application/json"
                         },
                         json=message
                     )
+                logger.info(f"Sent push notification for {reponame} to Slack channel {channel_id}")
                     
         # Handle Pull Request Events
         elif x_github_event == "pull_request":
             action = payload.get("action")
-            pr_data = payload.get("pull_request", {})
-            repo_name = payload.get("repository", {}).get("name", "")
+            pr_data = payload.get("pull_request") or {}
+            repo_name = reponame or ""
             
-            pr_user = pr_data.get("user", {}).get("login", "Unknown")
+            pr_user = (pr_data.get("user") or {}).get("login", "Unknown")
             pr_title = pr_data.get("title", "")
-            pr_body = pr_data.get("body", "")
+            pr_body = pr_data.get("body") or ""
             pr_state = pr_data.get("state", "")
             pr_url = pr_data.get("html_url", "")
             
@@ -165,13 +170,7 @@ async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[s
                 "repo": repo_name
             }
             
-            try:
-                block = build_gitprdetail_block(detail=details)
-            except NameError:
-                block = [
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f"🔀 *PR {action}* by @{pr_user}"}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f"*{pr_title}*"}}
-                ]
+            block = build_gitprdetail_block(detail=details)
 
             message = {
                 'channel': channel_id,  
@@ -183,49 +182,45 @@ async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[s
                 await client.post(
                     "https://slack.com/api/chat.postMessage",
                     headers={
-                        "Authorization": f"Bearer {os.getenv('BOT_AUTH_TOCKEN')}",
+                        "Authorization": f"Bearer {bot_token}",
                         "Content-Type": "application/json"
                     },
                     json=message
                 )
+            logger.info(f"Sent PR notification for {reponame} to Slack channel {channel_id}")
         
         elif x_github_event == "workflow_run":
-            try:
-                body = payload.get("workflow_run",{})
-                if body:
-                    event = x_github_event
-                    name = body.get("name","")
-                    status = body.get('status','')
-                    conclusion = body.get('conclusion','')
-                    html_url = body.get('html_url','')
+            body = payload.get("workflow_run") or {}
+            if body:
+                event = body.get("event") or x_github_event
+                name = body.get("name", "")
+                status = body.get('status', '')
+                conclusion = body.get('conclusion', '')
+                html_url = body.get('html_url', '')
 
-                    blk =  build_workflow_detail_block(event,name,status,conclusion,html_url)
-                    messg = {
-                        'channel':channel_id,
-                        'text':'Workflow Run',
-                        'blocks':blk
-                    }
-                    async with httpx.AsyncClient() as client:
-                        await client.post("https://slack.com/api/chat.postMessage",
+                blk = build_workflow_detail_block(event, name, status, conclusion, html_url)
+                messg = {
+                    'channel': channel_id,
+                    'text': 'Workflow Run',
+                    'blocks': blk
+                }
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        "https://slack.com/api/chat.postMessage",
                         headers={
-                            'Authorization': f'Bearer {os.getenv('BOT_AUTH_TOCKEN')}',
-                            'Content-Type':'application/json'
+                            'Authorization': f"Bearer {bot_token}",
+                            'Content-Type': 'application/json'
                         },
                         json=messg
-
-                        )
-                    logger.info('Workflow message sent.')
-                else:
-                    logger.info('No bod for github message')
-                return {'status':'ok'}
-            except Exception as e:
-                logger.error(f'failed to push workflow message:{e}')
-                return {"status":'failed'}
+                    )
+                logger.info(f"Sent workflow notification for {reponame} to Slack channel {channel_id}")
+            else:
+                logger.info('No workflow_run details in github payload')
 
         return {'status': 'ok'}
-    except Error as e:
-        logger.error("github request failed :",e)
-        return {'status':'failed'}
+    except Exception as e:
+        logger.exception(f"GitHub webhook request processing failed: {e}")
+        return {'status': 'failed', 'detail': str(e)}
 
 
 

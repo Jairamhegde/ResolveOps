@@ -41,24 +41,28 @@ async def verify_admin(user_id: str, check_type: str = "admin"):
     finally:
         db.close()
 
-signing_signature = os.getenv("SIGNING_SECRETE")
+from logger import logger
 
 async def verify_slack_signature(request: Request):
+    signing_signature = (os.getenv("SIGNING_SECRETE") or os.getenv("SIGNING_SECRET") or "").strip()
     time_stamp = request.headers.get("X-Slack-Request-Timestamp")
     slack_signature = request.headers.get("X-Slack-Signature")
 
     if not signing_signature:
-       
+        logger.error("Server configuration error: SIGNING_SECRET / SIGNING_SECRETE is missing in environment variables.")
         raise HTTPException(status_code=500, detail="Server configuration error: SIGNING_SECRETE missing")
 
     if not slack_signature or not time_stamp:
-   
+        logger.warning("Missing Slack signature or timestamp headers")
         raise HTTPException(status_code=403, detail="Missing Slack headers")
     
-    time_diff = abs(time.time() - int(time_stamp))
+    try:
+        time_diff = abs(time.time() - int(time_stamp))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=403, detail="Invalid Slack timestamp")
 
     if time_diff > 60 * 5:
-   
+        logger.warning(f"Slack request expired. Time diff: {time_diff}s")
         raise HTTPException(status_code=403, detail="Request too old")
     
     body = await request.body() 
@@ -70,22 +74,28 @@ async def verify_slack_signature(request: Request):
     ).hexdigest()
 
     if not hmac.compare_digest(my_signature, slack_signature):
+        logger.warning("Slack signature mismatch")
         raise HTTPException(status_code=403, detail="Invalid signature")
 
-github_secrete = os.getenv('GITHUB_SECRETE')
-async def verify_github_signature(request:Request):
+async def verify_github_signature(request: Request):
     github_signature = request.headers.get("X-Hub-Signature-256")
     if not github_signature:
-        raise HTTPException (status_code = 403,detail="No github signature.." )
+        logger.warning("GitHub webhook request missing X-Hub-Signature-256 header")
+        raise HTTPException(status_code=403, detail="No github signature..")
+
+    github_secret = (os.getenv('GITHUB_SECRETE') or os.getenv('GITHUB_SECRET') or "").strip()
+    if not github_secret:
+        logger.error("Neither GITHUB_SECRETE nor GITHUB_SECRET environment variable is set on the server!")
+        raise HTTPException(status_code=500, detail="No github secrete found.")
+
     body = await request.body()
-    if not github_secrete:
-        raise HTTPException(status_code=500, detail='No github secrete found.')
     hashed = hmac.new(
-        github_secrete.encode('utf-8'),
+        github_secret.encode('utf-8'),
         body,
         digestmod=hashlib.sha256
     )
-    sign = "sha256="+hashed.hexdigest()
-    com = hmac.compare_digest(sign,github_signature)
-    if not com:
-        raise HTTPException(status_code=403,detail="Invalid github signature.")
+    sign = "sha256=" + hashed.hexdigest()
+    if not hmac.compare_digest(sign, github_signature):
+        logger.warning("GitHub webhook signature verification failed (secret mismatch)")
+        raise HTTPException(status_code=403, detail="Invalid github signature.")
+

@@ -1,9 +1,17 @@
 import logging
+import sys
+
+handlers = [logging.StreamHandler(sys.stdout)]
+try:
+    handlers.append(logging.FileHandler('log.log'))
+except Exception:
+    pass
 
 logging.basicConfig(
-    filename='log.log',
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s' 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=handlers
 )
 
 logger = logging.getLogger("ResolveOps")
+

@@ -291,8 +291,8 @@ def build_gitpushdetail_block(detail: dict):
         modified_text = "`None`"
         
     # Format the commit message as a blockquote for a modern look
-    message = detail.get('message', 'No message provided')
-    quoted_message = f"> {message.replace('\n', '\n> ')}"
+    message = detail.get('message') or 'No message provided'
+    quoted_message = f"> {message.replace(chr(10), chr(10) + '> ')}"
 
     block = [
         {

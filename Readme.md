@@ -16,27 +16,43 @@ Traditional helpdesk workflows rely on someone manually reading, categorizing, a
 - **`/listissue`** — Admins get a formatted, priority-sorted list of active tickets, tagged with the reporter's Slack mention.
 - **`/resolve <ticket_id>`** — Admins mark a ticket resolved.
 - **`/add-admin @user`** — Existing admins can promote another workspace member to admin, without any direct database access.
+- **GitHub-to-Slack Event Integration** — Real-time GitHub repository activity piped into dedicated Slack channels with rich Block Kit formatting:
+  - **Pushes**: Commit message, committer username, timestamps, and files changed.
+  - **Pull Requests**: Status, action (opened, closed, merged), author, and PR link.
+  - **Workflow Runs**: CI/CD build status, conclusion, and run links.
 - **Automated SLA escalation** — A background job runs every 15 minutes, checking how long each active ticket has been open against an SLA window tied to its current priority. Tickets that breach their window get automatically bumped to a higher priority, so unresolved issues can't silently sit forgotten.
-- **Slack request verification** — Every webhook validates Slack's HMAC signature (`X-Slack-Signature` + `X-Slack-Request-Timestamp`) before processing anything, rejecting forged or replayed requests.
+- **Request verification & security** — Slack requests validate HMAC signatures (`X-Slack-Signature` + `X-Slack-Request-Timestamp`) and GitHub webhooks validate HMAC-SHA256 signatures (`X-Hub-Signature-256`), rejecting unauthenticated, forged, or replayed requests.
 - **Role-based access control** — Admin-only actions are gated by a live lookup against the database, independent of the request-authenticity check above.
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    A[Slack Slash Command] -->|HTTP POST| B[FastAPI Webhook]
-    B --> C{Signature Valid?}
-    C -- No --> X[403 Rejected]
-    C -- Yes --> D[Immediate Ack to Slack]
-    D --> E[Background Task]
-    E --> F{Admin Check}
-    F --> G[Gemini AI Triage]
-    F --> H[PostgreSQL]
-    G --> H
-    H -->|response_url| I[Slack Message Update]
+flowchart TD
+    subgraph Slack Helpdesk
+        A[Slack Slash Command] -->|HTTP POST| B[FastAPI Webhook]
+        B --> C{Slack Signature Valid?}
+        C -- No --> X1[403 Rejected]
+        C -- Yes --> D[Immediate Ack to Slack]
+        D --> E[Background Task]
+        E --> F{Admin Check}
+        F --> G[Gemini AI Triage]
+        F --> H[PostgreSQL]
+        G --> H
+        H -->|response_url| I[Slack Message Update]
+    end
 
-    J[APScheduler - every 15 min] --> K[SLA Escalation Job]
-    K --> H
+    subgraph GitHub Integration
+        GH[GitHub Webhook Event] -->|HTTP POST /webhook/github| GHW[FastAPI Webhook]
+        GHW --> GHV{HMAC-SHA256 Valid?}
+        GHV -- No --> X2[403 Rejected]
+        GHV -- Yes --> GHP{Event Router}
+        GHP -->|push / PR / workflow| SC[Slack Channel Post]
+    end
+
+    subgraph SLA Automation
+        J[APScheduler - every 15 min] --> K[SLA Escalation Job]
+        K --> H
+    end
 ```
 
 **Why background tasks + `response_url`, not synchronous responses:** Slack requires a response within 3 seconds of a slash command. Triage (a Gemini API call) and admin verification (a Slack API round-trip) can both take longer than that. Every webhook acknowledges immediately, then does the real work in a background task and posts the final result back to Slack's `response_url` asynchronously.
@@ -51,7 +67,8 @@ flowchart LR
 | Database | PostgreSQL, SQLAlchemy ORM |
 | AI Triage | Google Gemini (`gemini-2.5-flash`) |
 | Scheduling | APScheduler |
-| Auth | HMAC-SHA256 request signing, role-based DB lookups |
+| Webhook Integrations | Slack Slash Commands, GitHub Webhooks (HMAC-SHA256 authenticated) |
+| Auth & Security | HMAC-SHA256 request signing, role-based DB lookups |
 | Hosting | Render |
 
 ## Project Structure
@@ -59,14 +76,14 @@ flowchart LR
 ```
 backend/
 ├── main.py       # FastAPI app, routes, scheduler startup
-├── auth.py        # Slack signature verification, admin/user role checks
-├── crud.py         # Database operations and background task handlers
+├── auth.py        # Slack & GitHub signature verification, role checks
+├── crud.py         # Database ops, Slack Block Kit builders, background tasks
 ├── ai.py             # Gemini prompt and triage logic
 ├── sla.py             # SLA windows and escalation job
 ├── models.py           # SQLAlchemy table definitions
 ├── schemas.py            # Pydantic request models
 └── database.py             # Engine, session, and Base setup
-logger.py                    # Centralized logging config
+logger.py                    # Centralized logging config (stdout + file)
 ```
 
 ## API Endpoints
@@ -77,9 +94,10 @@ logger.py                    # Centralized logging config
 | `/webhook/listissue` | POST | Admin only | List active tickets |
 | `/webhook/resolve` | POST | Admin only | Mark a ticket resolved |
 | `/webhook/add-admin` | POST | Admin only | Promote a user to admin |
+| `/webhook/github` | POST | GitHub Webhooks | Process push, PR, & CI/CD workflow notifications to Slack |
 | `/api/health` | GET | Public | Health check |
 
-All `/webhook/*` endpoints require a valid Slack request signature.
+All Slack webhooks require a valid `X-Slack-Signature`. The GitHub webhook requires a valid `X-Hub-Signature-256`.
 
 ## SLA Escalation Windows
 
@@ -105,11 +123,19 @@ pip install -r requirements.txt
 ```
 DATABASE_URL=postgresql://user:password@host:port/dbname
 GEMINI_API=your_gemini_api_key
-BOT_AUTH_TOCKEN=xoxb-your-slack-bot-token
-SIGNING_SECRETE=your_slack_signing_secret
+BOT_AUTH_TOKEN=xoxb-your-slack-bot-token
+SIGNING_SECRET=your_slack_signing_secret
+GITHUB_SECRET=your_github_webhook_secret
 ```
 
-**3. Create a Slack app** at [api.slack.com/apps](https://api.slack.com/apps) with slash commands pointed at your deployed URLs:
+**3. Configure GitHub Webhook** (optional, for repository alerts):
+In your GitHub repo: **Settings** $\rightarrow$ **Webhooks** $\rightarrow$ **Add webhook**:
+- **Payload URL**: `https://<your-domain>/webhook/github`
+- **Content type**: `application/json`
+- **Secret**: Your configured `GITHUB_SECRET`
+- **Events**: Pushes, Pull requests, and Workflow runs
+
+**4. Create a Slack app** at [api.slack.com/apps](https://api.slack.com/apps) with slash commands pointed at your deployed URLs:
 - `/ticket` → `POST /webhook/ticket`
 - `/listissue` → `POST /webhook/listissue`
 - `/resolve` → `POST /webhook/resolve`
