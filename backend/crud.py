@@ -294,6 +294,21 @@ def build_gitpushdetail_block(detail: dict):
     message = detail.get('message') or 'No message provided'
     quoted_message = f"> {message.replace(chr(10), chr(10) + '> ')}"
 
+    raw_date = detail.get('date')
+    unix_ts = int(time.time())
+    fallback_date = None
+    if raw_date:
+        try:
+            dt = datetime.fromisoformat(str(raw_date).replace('Z', '+00:00'))
+            unix_ts = int(dt.timestamp())
+            fallback_date = dt.strftime('%b %d, %Y at %I:%M %p')
+        except Exception:
+            fallback_date = str(raw_date)
+    if not fallback_date:
+        fallback_date = datetime.now().strftime('%b %d, %Y at %I:%M %p')
+
+    date_display = f"<!date^{unix_ts}^{{date_short}} at {{time}}|{fallback_date}>"
+
     block = [
         {
             "type": "header", 
@@ -302,8 +317,8 @@ def build_gitpushdetail_block(detail: dict):
         {
             "type": "context",
             "elements": [
-                {"type": "mrkdwn", "text": f"*Pushed by:* @{detail.get('name')}"},
-                {"type": "mrkdwn", "text": f"*Date:* <!date^{int(time.time())}^{{date_short_pretty}} at {{time}}|{detail.get('date')}>"} 
+                {"type": "mrkdwn", "text": f"*Pushed by:* @{detail.get('name') or 'Unknown'}"},
+                {"type": "mrkdwn", "text": f"*Date:* {date_display}"} 
             ]
         },
         {"type": "divider"},

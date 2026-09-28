@@ -23,9 +23,14 @@ def escalate_active_tickets():
         logger.info("Escalation process started")
         for ticket in tickets:
             sla_window = get_sla_window(ticket.priority)
-            if sla_window is None:
+            if sla_window is None or not ticket.created_at:
                 continue
-            window_age = datetime.now(timezone.utc) - ticket.created_at
+            
+            created_at = ticket.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+
+            window_age = datetime.now(timezone.utc) - created_at
 
             if window_age > sla_window:
                 ticket.priority -= 1
