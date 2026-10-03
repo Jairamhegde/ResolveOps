@@ -5,7 +5,9 @@ from backend.crud import (
     insert_ticket_atbackground,
     background_listissue,
     backround_procces_resolve,
-    insert_admin_background,
+    insert_admin_background
+)
+from backend.slack_blocks import (
     build_gitpushdetail_block,
     build_gitprdetail_block,
     build_workflow_detail_block

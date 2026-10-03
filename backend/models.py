@@ -1,14 +1,23 @@
-from sqlalchemy import Column, String, Integer, Text, ForeignKey,DateTime
-from backend.database import Base
-from datetime import datetime
-from pydantic import BaseModel
+from datetime import datetime, timezone
 from typing import Dict, Any
+
+from pydantic import BaseModel
+from sqlalchemy import Column, String, Integer, Text, ForeignKey, DateTime
+
+from backend.database import Base
+
+
+def utc_now_naive():
+    """Current UTC time without tzinfo, for Postgres `timestamp` (without time zone) columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class User(Base):
     __tablename__ = "user_details"
     slack_id = Column(String, primary_key=True)
     name = Column(String)
     email = Column(Text)
+
 
 class Ticket(Base):
     __tablename__ = "ticket"
@@ -19,7 +28,9 @@ class Ticket(Base):
     category = Column(String)
     status = Column(String, default="active")
     suggested_fix = Column(Text)
-    created_at = Column(DateTime(timezone=True),default=datetime.now)
+    created_at = Column(DateTime(timezone=True), default=datetime.now)
+    escalated_at = Column(DateTime, default=utc_now_naive)
+
 
 class Admin(Base):
     __tablename__ = "admin"
@@ -31,5 +42,3 @@ class Admin(Base):
 
 class GitRequest(BaseModel):
     repository: Dict[str, Any]
-
-
