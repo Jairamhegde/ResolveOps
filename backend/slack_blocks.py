@@ -6,7 +6,11 @@ from backend.sla import SLA_WINDOWS, to_utc
 
 
 ISSUE_PREVIEW_CHARS = 280
+# Slack section text is capped at 3000 chars
+SUGGESTED_FIX_CHARS = 2800
 RESOLVE_ACTION_ID = "resolve_ticket"
+FIX_RESOLVED_ACTION_ID = "ai_fix_resolved"
+FIX_NOT_RESOLVED_ACTION_ID = "ai_fix_not_resolved"
 
 PRIORITY_META = {
     1: ("🔴", "Critical"),
@@ -87,7 +91,7 @@ def build_resolve_button(ticket) -> dict:
             "title": {"type": "plain_text", "text": f"Resolve ticket #{ticket.id}?"},
             "text": {
                 "type": "mrkdwn",
-                "text": f"This will close the ticket and notify <@{ticket.slack_id}>.\n> {issue_preview}"
+                "text": f"This will close the ticket.\n> {issue_preview}"
             },
             "confirm": {"type": "plain_text", "text": "Resolve"},
             "deny": {"type": "plain_text", "text": "Cancel"},
@@ -130,7 +134,7 @@ def build_ticket_card(ticket, now: datetime) -> list:
     ]
 
 
-def build_ticket_blocks(tickets, priority_counts: dict, total_active: int) -> list:
+def build_ticket_blocks(tickets, priority_counts: dict, total_active: int, notice: str = None) -> list:
     now = datetime.now(timezone.utc)
 
     breakdown = "   ".join(
@@ -163,6 +167,9 @@ def build_ticket_blocks(tickets, priority_counts: dict, total_active: int) -> li
         {"type": "divider"},
     ]
 
+    if notice:
+        blocks.insert(1, build_notice_block(notice))
+
     for ticket in tickets:
         blocks.extend(build_ticket_card(ticket, now))
 
@@ -178,8 +185,8 @@ def build_ticket_blocks(tickets, priority_counts: dict, total_active: int) -> li
     return blocks[:50]
 
 
-def build_empty_ticket_blocks() -> list:
-    return [
+def build_empty_ticket_blocks(notice: str = None) -> list:
+    blocks = [
         {
             "type": "header",
             "text": {"type": "plain_text", "text": "🎫 Active Tickets", "emoji": True}
@@ -187,6 +194,100 @@ def build_empty_ticket_blocks() -> list:
         {
             "type": "section",
             "text": {"type": "mrkdwn", "text": "*All clear!* There are no active tickets right now."}
+        }
+    ]
+
+    if notice:
+        blocks.insert(1, build_notice_block(notice))
+
+    return blocks
+
+
+def build_notice_block(notice: str) -> dict:
+    """A one-line status message shown under the list header, e.g. after a ticket is resolved."""
+    return {
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": notice}]
+    }
+
+
+def build_resolution_dm_blocks(ticket_id: int, issue_text: str, admin_id: str) -> list:
+    """DM sent to the reporter when their ticket is resolved."""
+    issue = escape_mrkdwn(truncate((issue_text or "No description").strip(), ISSUE_PREVIEW_CHARS))
+    quoted_issue = "> " + issue.replace("\n", "\n> ")
+
+    return [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Your ticket `#{ticket_id}` has been resolved*\n{quoted_issue}"
+            }
+        },
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"Resolved by <@{admin_id}>   ·   Still having trouble? File a new ticket with `/ticket`"}
+            ]
+        }
+    ]
+
+
+# AI suggested fix (/ticket)
+
+def build_suggested_fix_blocks(ticket_id: int, suggested_fix: str) -> list:
+    """Suggested fix with Resolved / Not resolved buttons; handled by the interactions endpoint."""
+    fix = escape_mrkdwn(truncate((suggested_fix or "No fix suggested").strip(), SUGGESTED_FIX_CHARS))
+
+    return [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Suggested Fix*  ·  `#{ticket_id}`\n{fix}"}
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "Did this fix your issue?"}]
+        },
+        {
+            "type": "actions",
+            "block_id": f"fix_feedback_{ticket_id}",
+            "elements": [
+                {
+                    "type": "button",
+                    "action_id": FIX_RESOLVED_ACTION_ID,
+                    "value": str(ticket_id),
+                    "style": "primary",
+                    "text": {"type": "plain_text", "text": "Resolved", "emoji": True}
+                },
+                {
+                    "type": "button",
+                    "action_id": FIX_NOT_RESOLVED_ACTION_ID,
+                    "value": str(ticket_id),
+                    "style": "danger",
+                    "text": {"type": "plain_text", "text": "Not resolved", "emoji": True}
+                }
+            ]
+        }
+    ]
+
+
+def build_fix_feedback_result_blocks(ticket_id: int, suggested_fix: str, resolved: bool) -> list:
+    """Replaces the suggested-fix message once the user answers, so the buttons can't be clicked again."""
+    fix = escape_mrkdwn(truncate((suggested_fix or "No fix suggested").strip(), SUGGESTED_FIX_CHARS))
+
+    if resolved:
+        outcome = f"✅ Glad that worked! Ticket `#{ticket_id}` has been closed."
+    else:
+        outcome = f"📨 Ticket `#{ticket_id}` has been sent to IT support. An admin will follow up."
+
+    return [
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*💡 Suggested Fix*  ·  `#{ticket_id}`\n{fix}"}
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": outcome}]
         }
     ]
 

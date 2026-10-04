@@ -6,11 +6,16 @@ from sqlalchemy import func
 
 from logger import logger
 from backend.database import SessionLocal
-from backend.models import User, Ticket, Admin
+from backend.models import User, Ticket, Admin, utc_now_naive
 from backend.schemas import InserTicket, CreateAdmin, CreateUser
 from backend.ai import get_ai_data
 from backend.auth import verify_admin
-from backend.slack_blocks import build_ticket_blocks, build_empty_ticket_blocks
+from backend.slack_blocks import (
+    build_ticket_blocks,
+    build_empty_ticket_blocks,
+    build_suggested_fix_blocks,
+    build_fix_feedback_result_blocks
+)
 
 
 DAILY_TICKET_LIMIT = 5
@@ -19,9 +24,7 @@ SLACK_USER_INFO_URL = "https://slack.com/api/users.info"
 # Slack allows max 50 blocks per message; each ticket uses 3 blocks + 5 for header/summary/footer
 LIST_ISSUE_LIMIT = 12
 
-
 # Slack helpers
-
 async def send_slack_response(response_url: str, payload: dict):
     """Post a message back to Slack via the slash command's response_url."""
     try:
@@ -52,6 +55,7 @@ async def fetch_slack_user(slack_id: str) -> dict:
 # Database operations
 
 def insert_to_ticket(details: InserTicket):
+    """Insert a ticket and return its id, or None if the insert failed."""
     db = SessionLocal()
     new_ticket = Ticket(
         slack_id=details.slack_id,
@@ -65,12 +69,12 @@ def insert_to_ticket(details: InserTicket):
     try:
         db.add(new_ticket)
         db.commit()
-        logger.info(f"Ticket {new_ticket.id} created for user {details.slack_id}")
-        return True
+        logger.info(f"Ticket {new_ticket.id} created for user {details.slack_id} with status '{details.status}'")
+        return new_ticket.id
     except Exception as e:
         db.rollback()
         logger.error(f"Ticket insertion failed for user {details.slack_id}: {e}")
-        return False
+        return None
     finally:
         db.close()
 
@@ -140,7 +144,6 @@ async def add_admin(slack_id: str, name: str, email: str, role: str = 'it suppor
     finally:
         db.close()
 
-
 # Background workers (Slack slash commands)
 
 async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: str, response_url: str):
@@ -160,7 +163,8 @@ async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: s
             insert_user(CreateUser(slack_id=user_id, name=user_name, email=user_email))
 
         # Enforce the daily ticket limit before calling the AI
-        start_of_today = datetime.combine(datetime.now().date(), datetime.min.time())
+        # Timezone-aware local midnight so the comparison against timestamptz is unambiguous
+        start_of_today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
         today_count = db.query(Ticket).filter(
             Ticket.slack_id == user_id,
             Ticket.created_at >= start_of_today,
@@ -177,24 +181,80 @@ async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: s
 
         issue_category = ai_response.get("category")
         issue_priority = ai_response.get("priority")
-        suggested_fix_from_ai = ai_response.get("suggested_fix")
+        suggested_fix_from_ai = ai_response.get("suggested_fix") or "No fix suggested"
 
-        await send_slack_response(response_url, {"text": f"*Suggested Fix:*\n{suggested_fix_from_ai}"})
-
+       
         new_ticket = InserTicket(
             slack_id=user_id,
             issue_text=issue_text or "",
             priority=issue_priority or 5,
             category=issue_category or "other",
-            suggested_fix=suggested_fix_from_ai or "No fix suggested"
+            status="pending_response",
+            suggested_fix=suggested_fix_from_ai
         )
-        return insert_to_ticket(new_ticket)
+        ticket_id = insert_to_ticket(new_ticket)
+        if ticket_id is None:
+            await send_slack_response(response_url, {"text": "Could not save your ticket. Please try again later."})
+            return False
+
+        await send_slack_response(response_url, {
+            "text": f"Suggested fix for ticket #{ticket_id}",
+            "blocks": build_suggested_fix_blocks(ticket_id, suggested_fix_from_ai)
+        })
+        return True
 
     except Exception as e:
         db.rollback()
         logger.error(f"Ticket processing failed for {user_id}: {e}")
         await send_slack_response(response_url, {"text": "Server is not active."})
         return False
+    finally:
+        db.close()
+
+
+async def background_fix_feedback(user_id: str, ticket_id: int, resolved: bool, response_url: str):
+    """Handle the Resolved / Not resolved buttons on the AI suggested fix."""
+    logger.info(f"Fix feedback for ticket {ticket_id} from {user_id}: resolved={resolved}")
+
+    db = SessionLocal()
+    try:
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+        if not ticket:
+            logger.warning(f"Ticket {ticket_id} not found")
+            await send_slack_response(response_url, {"text": f"No ticket found with id {ticket_id}", "replace_original": False})
+            return
+
+        if ticket.slack_id != user_id:
+            logger.warning(f"{user_id} tried to answer fix feedback for ticket {ticket_id} owned by {ticket.slack_id}")
+            await send_slack_response(response_url, {"text": "Only the person who raised this ticket can respond.", "replace_original": False})
+            return
+
+        # 'active' is still answerable: the 5h pending-response timeout may have moved it there
+        # before the user clicked. Anything else (e.g. already resolved) ignores the click.
+        if ticket.status not in ('pending_response', 'active'):
+            logger.info(f"Ticket {ticket_id} already answered (status '{ticket.status}')")
+            return
+
+        if resolved:
+            ticket.status = 'resolved'
+            ticket.resolved_by = 'ai'
+        elif ticket.status == 'pending_response':
+            ticket.status = 'active'
+            ticket.resolved_by = None
+            # Start the SLA clock now, not from created_at
+            ticket.escalated_at = utc_now_naive()
+        db.commit()
+        logger.info(f"Ticket {ticket_id} set to '{ticket.status}' from fix feedback")
+
+        await send_slack_response(response_url, {
+            "replace_original": True,
+            "text": f"Ticket #{ticket_id} {'resolved' if resolved else 'sent to IT support'}",
+            "blocks": build_fix_feedback_result_blocks(ticket_id, ticket.suggested_fix, resolved)
+        })
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to record fix feedback for ticket {ticket_id}: {e}")
+        await send_slack_response(response_url, {"text": "Server is not active.", "replace_original": False})
     finally:
         db.close()
 
@@ -217,6 +277,7 @@ async def backround_procces_resolve(user_id: str, ticket_id: int, response_url: 
             return
 
         ticket.status = 'resolved'
+        ticket.resolved_by = user_id
         db.commit()
         logger.info(f"Ticket {ticket_id} resolved by {user_id}")
         await send_slack_response(response_url, {"text": f"Resolved ticket :{ticket_id}."})
@@ -239,7 +300,6 @@ async def background_listissue(user_id: str, response_url: str):
 
     db = SessionLocal()
     try:
-        # Priority 1 is the most urgent, so sort ascending; newest first within a priority
         all_rows = (
             db.query(Ticket)
             .filter(Ticket.status == 'active')

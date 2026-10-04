@@ -1,23 +1,29 @@
 from typing import Dict, Optional, Any
-from fastapi import FastAPI, Request, BackgroundTasks, Depends, Header
+import json
+import os
+from fastapi import FastAPI, Request, BackgroundTasks, Depends, Header, Response
 from backend.auth import verify_slack_signature, verify_admin, verify_github_signature
 from backend.crud import (
     insert_ticket_atbackground,
     background_listissue,
     backround_procces_resolve,
-    insert_admin_background
+    insert_admin_background,
+    background_fix_feedback
 )
 from backend.slack_blocks import (
     build_gitpushdetail_block,
     build_gitprdetail_block,
-    build_workflow_detail_block
+    build_workflow_detail_block,
+    RESOLVE_ACTION_ID,
+    FIX_RESOLVED_ACTION_ID,
+    FIX_NOT_RESOLVED_ACTION_ID
 )
 import httpx
 from logger import logger
-from backend.sla import escalate_active_tickets
+from backend.sla import escalate_active_tickets, activate_stale_pending_tickets
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
-import os
+
 app = FastAPI()
 load_dotenv()
 
@@ -26,6 +32,7 @@ scheduler = BackgroundScheduler()
 @app.on_event('startup')
 def start_scheduler():
     scheduler.add_job(escalate_active_tickets, 'interval', minutes=15, id="sla_escalation_job")
+    scheduler.add_job(activate_stale_pending_tickets, 'interval', minutes=15, id="pending_response_timeout_job")
     scheduler.start()
     logger.info("Scheduler started")
 
@@ -225,5 +232,46 @@ async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[s
         return {'status': 'failed', 'detail': str(e)}
 
 
+@app.post("/webhook/interactions", dependencies=[Depends(verify_slack_signature)])
+async def handle_slack_interaction(request: Request, background_tasks: BackgroundTasks):
+    form = await request.form()
+    payload_raw = form.get("payload")
+    if not payload_raw:
+        return Response(status_code=400, content="Missing payload")
 
-    
+    try:
+        payload = json.loads(payload_raw)
+    except json.JSONDecodeError:
+        return Response(status_code=400, content="Invalid JSON payload")
+
+    interaction_type = payload.get("type")
+    if interaction_type != "block_actions":
+        logger.info(f"Ignoring Slack interaction of type '{interaction_type}'")
+        return Response(status_code=200)
+
+    user_id = payload.get("user", {}).get("id")
+    response_url = payload.get("response_url")
+    actions = payload.get("actions", [])
+    action_id = actions[0].get("action_id") if actions else None
+
+    if action_id not in (RESOLVE_ACTION_ID, FIX_RESOLVED_ACTION_ID, FIX_NOT_RESOLVED_ACTION_ID):
+        logger.info(f"Ignoring Slack action '{action_id}' from {user_id}")
+        return Response(status_code=200)
+
+    ticket_val = actions[0].get("value")
+    if not (ticket_val and str(ticket_val).isdigit()) or not response_url:
+        logger.warning(f"Invalid '{action_id}' action from {user_id}: value={ticket_val!r}")
+        return Response(status_code=200)
+
+    if action_id == RESOLVE_ACTION_ID:
+        background_tasks.add_task(backround_procces_resolve, user_id, int(ticket_val), response_url)
+    else:
+        resolved = action_id == FIX_RESOLVED_ACTION_ID
+        background_tasks.add_task(background_fix_feedback, user_id, int(ticket_val), resolved, response_url)
+    return Response(status_code=200)
+
+
+
+
+
+
