@@ -14,6 +14,10 @@ SLA_WINDOWS = {
 }
 
 
+# How long a user has to answer the AI suggested fix before the ticket goes to admins
+PENDING_RESPONSE_WINDOW = timedelta(hours=5)
+
+
 def get_sla_window(priority: int):
     return SLA_WINDOWS.get(priority)
 
@@ -57,5 +61,33 @@ def escalate_active_tickets():
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to escalate tickets: {e}")
+    finally:
+        db.close()
+
+
+def activate_stale_pending_tickets():
+    """Move tickets the user never answered (Resolved / Not resolved) to 'active' after PENDING_RESPONSE_WINDOW."""
+    logger.info("Pending-response timeout job started")
+    db = SessionLocal()
+
+    try:
+        cutoff = datetime.now(timezone.utc) - PENDING_RESPONSE_WINDOW
+        tickets = (
+            db.query(Ticket)
+            .filter(Ticket.status == 'pending_response', Ticket.created_at <= cutoff)
+            .all()
+        )
+
+        for ticket in tickets:
+            ticket.status = 'active'
+            ticket.resolved_by = None
+            # Start the SLA clock now, not from created_at
+            ticket.escalated_at = utc_now_naive()
+
+        db.commit()
+        logger.info(f"Pending-response timeout finished: {len(tickets)} ticket(s) moved to active {[t.id for t in tickets]}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to activate pending tickets: {e}")
     finally:
         db.close()
