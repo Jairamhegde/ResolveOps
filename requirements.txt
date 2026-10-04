@@ -10,3 +10,5 @@ apscheduler
 python-multipart
 psycopg[binary]
 pytest
+
+alembic

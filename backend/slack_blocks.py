@@ -276,14 +276,14 @@ def build_fix_feedback_result_blocks(ticket_id: int, suggested_fix: str, resolve
     fix = escape_mrkdwn(truncate((suggested_fix or "No fix suggested").strip(), SUGGESTED_FIX_CHARS))
 
     if resolved:
-        outcome = f"✅ Glad that worked! Ticket `#{ticket_id}` has been closed."
+        outcome = f"Glad that worked! Ticket `#{ticket_id}` has been closed."
     else:
         outcome = f"📨 Ticket `#{ticket_id}` has been sent to IT support. An admin will follow up."
 
     return [
         {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*💡 Suggested Fix*  ·  `#{ticket_id}`\n{fix}"}
+            "text": {"type": "mrkdwn", "text": f"*Suggested Fix*  ·  `#{ticket_id}`\n{fix}"}
         },
         {
             "type": "context",
