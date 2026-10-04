@@ -39,6 +39,8 @@ def test_ticket_insertion():
     assert res == True
     result = delete_ticket(fake_ticket)
     logger.info(result)
+
+
     
 
 

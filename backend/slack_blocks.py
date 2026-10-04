@@ -24,7 +24,7 @@ CATEGORY_EMOJI = {
     "network": "🌐",
     "hardware": "🖥️",
     "software": "💾",
-    "account access": "🔐",
+    "account_access": "🔐",
     "spam": "🚫",
 }
 
@@ -102,16 +102,18 @@ def build_resolve_button(ticket) -> dict:
 
 def build_ticket_card(ticket, now: datetime) -> list:
     emoji, label = PRIORITY_META.get(ticket.priority, ("⚪", "Unknown"))
-    category = ticket.category or "Other"
-    category_emoji = CATEGORY_EMOJI.get(category.lower(), "📁")
+    category = (ticket.category or "other").lower().replace(" ", "_")
+    category_emoji = CATEGORY_EMOJI.get(category, "📁")
 
     issue = escape_mrkdwn(truncate((ticket.issue_text or "No description").strip(), ISSUE_PREVIEW_CHARS))
     quoted_issue = "> " + issue.replace("\n", "\n> ")
 
     meta = [
         f"<@{ticket.slack_id}>",
-        f"{category_emoji} {escape_mrkdwn(category)}",
+        f"{category_emoji} {escape_mrkdwn(category.replace('_', ' ').title())}",
     ]
+    if ticket.needs_review:
+        meta.insert(0, f"⚠️ *Needs review* ({ticket.flag.replace('_', ' ')})")
     if ticket.created_at:
         meta.append(f"Opened {slack_date(ticket.created_at)}")
     meta.append(build_sla_text(ticket, now))
@@ -269,6 +271,23 @@ def build_suggested_fix_blocks(ticket_id: int, suggested_fix: str) -> list:
             ]
         }
     ]
+
+
+def build_ticket_received_blocks(ticket_id: int, suggested_fix: str = None) -> list:
+    """Confirmation for tickets that go straight to IT; shows the AI fix as a tip when there is one."""
+    blocks = []
+    if suggested_fix:
+        fix = escape_mrkdwn(truncate(suggested_fix.strip(), SUGGESTED_FIX_CHARS))
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*💡 While you wait, try this*  ·  `#{ticket_id}`\n{fix}"}
+        })
+
+    blocks.append({
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": f"📨 Ticket `#{ticket_id}` has been sent to IT support. An admin will follow up."}]
+    })
+    return blocks
 
 
 def build_fix_feedback_result_blocks(ticket_id: int, suggested_fix: str, resolved: bool) -> list:

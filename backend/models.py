@@ -2,9 +2,10 @@ from datetime import datetime, timezone
 from typing import Dict, Any
 
 from pydantic import BaseModel
-from sqlalchemy import Column, String, Integer, Text, ForeignKey, DateTime, CheckConstraint, text
+from sqlalchemy import Column, String, Integer, Text, ForeignKey, DateTime, CheckConstraint, text, Boolean
 
 from backend.database import Base
+from backend.schemas import Flag
 
 
 def utc_now_naive():
@@ -32,6 +33,10 @@ class Ticket(Base):
             "resolved_by IS NULL OR status = 'resolved'",
             name="ck_ticket_resolved_by_requires_resolved",
         ),
+        CheckConstraint(
+            "flag IN (" + ", ".join(f"'{f.value}'" for f in Flag) + ")",
+            name="ck_ticket_flag_valid",
+        ),
     )
     id = Column(Integer, primary_key=True)
     slack_id = Column(String(50), ForeignKey('user_details.slack_id'))
@@ -41,10 +46,10 @@ class Ticket(Base):
     status = Column(String(100), default="active", server_default=text("'active'"))
     suggested_fix = Column(Text)
     created_at = Column(DateTime(timezone=True), default=utc_now, server_default=text("CURRENT_TIMESTAMP"))
-    # Last time the SLA job escalated this ticket; NULL until the first escalation
     escalated_at = Column(DateTime)
-    # 'ai' or the slack_id of whoever resolved it (no FK, since 'ai' is not a user)
     resolved_by = Column(String(50))
+    flag = Column(String(50), nullable=False, default=Flag.none.value, server_default=text("'none'"))
+    needs_review = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
 
 class Admin(Base):

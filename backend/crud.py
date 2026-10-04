@@ -14,7 +14,8 @@ from backend.slack_blocks import (
     build_ticket_blocks,
     build_empty_ticket_blocks,
     build_suggested_fix_blocks,
-    build_fix_feedback_result_blocks
+    build_fix_feedback_result_blocks,
+    build_ticket_received_blocks
 )
 
 
@@ -63,7 +64,9 @@ def insert_to_ticket(details: InserTicket):
         priority=details.priority,
         category=details.category,
         status=details.status,
-        suggested_fix=details.suggested_fix
+        suggested_fix=details.suggested_fix,
+        flag=details.flag.value if hasattr(details.flag, 'value') else str(details.flag),
+        needs_review=details.needs_review
     )
 
     try:
@@ -177,30 +180,50 @@ async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: s
             return False
 
         ai_response = await get_ai_data(issue_text)
-        logger.info(f"AI classified ticket from {user_id}: category={ai_response.get('category')}, priority={ai_response.get('priority')}")
+        priority = ai_response.get('priority','')
+        category = ai_response.get('category','')
+        flag = ai_response.get('flag','')
+        suggested_fix = ai_response.get('suggested_fix')  
+        logger.info(f"AI classified ticket from {user_id}: category={category}, priority={priority}")
 
-        issue_category = ai_response.get("category")
-        issue_priority = ai_response.get("priority")
-        suggested_fix_from_ai = ai_response.get("suggested_fix") or "No fix suggested"
+        # Only low-priority, unflagged, self-fixable tickets wait for the user's answer
+        if not ai_response:
+            status, priority, category, suggested_fix, flag, needs_review = 'active', 3, 'other', None, 'ai_failed', True
+        elif flag != 'none':
+            status, needs_review = 'active', True
+        elif priority <= 2 or category in {'hardware', 'account_access'}:
+            status, needs_review = 'active', False
+        else:
+            status, needs_review = 'pending_response', False
 
-       
         new_ticket = InserTicket(
             slack_id=user_id,
             issue_text=issue_text or "",
-            priority=issue_priority or 5,
-            category=issue_category or "other",
-            status="pending_response",
-            suggested_fix=suggested_fix_from_ai
+            priority=priority,
+            category=category,
+            status=status,
+            suggested_fix=suggested_fix,
+            flag=flag,
+            needs_review=needs_review
         )
+
         ticket_id = insert_to_ticket(new_ticket)
         if ticket_id is None:
             await send_slack_response(response_url, {"text": "Could not save your ticket. Please try again later."})
             return False
 
-        await send_slack_response(response_url, {
-            "text": f"Suggested fix for ticket #{ticket_id}",
-            "blocks": build_suggested_fix_blocks(ticket_id, suggested_fix_from_ai)
-        })
+        if status == 'pending_response':
+            payload = {
+                "text": f"Suggested fix for ticket #{ticket_id}",
+                "blocks": build_suggested_fix_blocks(ticket_id, suggested_fix)
+            }
+        else:
+            # Flagged tickets get no fix: the AI's answer is unreliable for them
+            payload = {
+                "text": f"Ticket #{ticket_id} sent to IT support",
+                "blocks": build_ticket_received_blocks(ticket_id, None if needs_review else suggested_fix)
+            }
+        await send_slack_response(response_url, payload)
         return True
 
     except Exception as e:
@@ -213,6 +236,7 @@ async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: s
 
 
 async def background_fix_feedback(user_id: str, ticket_id: int, resolved: bool, response_url: str):
+
     """Handle the Resolved / Not resolved buttons on the AI suggested fix."""
     logger.info(f"Fix feedback for ticket {ticket_id} from {user_id}: resolved={resolved}")
 
@@ -230,7 +254,6 @@ async def background_fix_feedback(user_id: str, ticket_id: int, resolved: bool, 
             return
 
         # 'active' is still answerable: the 5h pending-response timeout may have moved it there
-        # before the user clicked. Anything else (e.g. already resolved) ignores the click.
         if ticket.status not in ('pending_response', 'active'):
             logger.info(f"Ticket {ticket_id} already answered (status '{ticket.status}')")
             return
@@ -241,7 +264,6 @@ async def background_fix_feedback(user_id: str, ticket_id: int, resolved: bool, 
         elif ticket.status == 'pending_response':
             ticket.status = 'active'
             ticket.resolved_by = None
-            # Start the SLA clock now, not from created_at
             ticket.escalated_at = utc_now_naive()
         db.commit()
         logger.info(f"Ticket {ticket_id} set to '{ticket.status}' from fix feedback")
