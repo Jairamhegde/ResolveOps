@@ -57,6 +57,8 @@ class Admin(Base):
     slack_id = Column(String(50), ForeignKey("user_details.slack_id"))
     email = Column(String(100), nullable=False, unique=True)
     role = Column(String(100), server_default=text("'it support'"))
+    # bcrypt hash of the dashboard password. NULL means this admin can't log in to the dashboard.
+    password_hash = Column(String(255))
 
 
 class GitRequest(BaseModel):

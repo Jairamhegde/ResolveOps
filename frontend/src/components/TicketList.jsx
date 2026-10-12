@@ -1,28 +1,7 @@
 import Badge from "./Badge";
 import Panel from "./Panel";
+import { FLAG_TONES, PRIORITY_TONES, STATUS_TONES, readable, timeAgo } from "../ticketFormat";
 import "./ticketlist.css";
-
-const PRIORITY_TONES = { 1: "critical", 2: "serious", 3: "warning" };
-const STATUS_TONES = { resolved: "good", active: "info" };
-const FLAG_TONES = { injection: "critical", spam: "serious", unclear: "warning", ai_failed: "warning" };
-
-function timeAgo(dateText) {
-  if (!dateText) return "date unknown";
-
-  const minutes = Math.floor((Date.now() - new Date(dateText)) / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-// "pending_response" -> "pending response"
-function readable(text) {
-  return (text || "").replaceAll("_", " ");
-}
 
 // A list of tickets in a panel. `showFlag` shows why the AI flagged a ticket instead of its status.
 function TicketList({ title, subtitle, tickets, emptyMessage, showFlag = false }) {

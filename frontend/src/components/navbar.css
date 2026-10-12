@@ -3,7 +3,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  height: 64px;
+  min-height: 64px;
   padding: 0 24px;
   background-color: var(--panel-background);
   border-bottom: 1px solid var(--border);
@@ -32,36 +32,58 @@
   color: var(--text-primary);
 }
 
-.navbar-subtitle {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.navbar-live {
+.navbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
+}
+
+.navbar-user {
+  text-align: right;
+}
+
+.navbar-email {
   font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.navbar-role {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.navbar-logout {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: transparent;
   color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
 }
 
-/* Pulsing green dot: the data refreshes on its own */
-.navbar-live-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--good);
-  animation: navbar-pulse 2s ease-in-out infinite;
+.navbar-logout:hover {
+  background-color: var(--hover);
 }
 
-@keyframes navbar-pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
+/* Phones: logo and logout on the first row, the page tabs on their own row below */
 
 @media (max-width: 720px) {
-  .navbar-subtitle {
+  .navbar {
+    flex-wrap: wrap;
+    padding: 12px 16px;
+  }
+
+  .navbar-user {
     display: none;
+  }
+
+  .navbar-center {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
   }
 }

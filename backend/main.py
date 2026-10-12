@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from backend.auth import verify_slack_signature, verify_github_signature
 from backend.schemas import AdminType, ValidateAdmin
 from backendapi.routes.dashboard_routes import router as dashboard_router
+from backendapi.routes.auth_routes import router as auth_router
 from backend.crud import (
     insert_ticket_background,
     background_listissue,
@@ -33,11 +34,13 @@ load_dotenv()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")],
-    allow_methods=["GET"],
+    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173"), "http://localhost:5173"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(dashboard_router)
+app.include_router(auth_router)
 
 scheduler = BackgroundScheduler()
 

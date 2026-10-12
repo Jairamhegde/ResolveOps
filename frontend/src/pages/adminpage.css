@@ -1,0 +1,17 @@
+.admin-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.admin-ticket-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .admin-kpi-row {
+    grid-template-columns: 1fr;
+  }
+}

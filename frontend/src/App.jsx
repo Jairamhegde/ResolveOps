@@ -1,103 +1,64 @@
-import { useEffect, useState } from "react";
-import { fetchOverview } from "./api";
+import { useState } from "react";
 import Navbar from "./components/Navbar";
-import StatCard from "./components/StatCard";
-import BarChartCard from "./components/BarChartCard";
-import TicketList from "./components/TicketList";
+import PageTabs from "./components/PageTabs";
+import LoginPage from "./components/LoginPage";
+import UserPage from "./pages/UserPage";
+import AdminPage from "./pages/AdminPage";
+import SuperAdminPage from "./pages/SuperAdminPage";
 
-const REFRESH_EVERY_MS = 10000;
+const SESSION_KEY = "resolveops-session";
 
-// The API only returns priorities that have tickets, so fill the gaps to always show P1 to P5.
-function toPriorityBars(byPriority) {
-  return [1, 2, 3, 4, 5].map((priority) => {
-    const row = byPriority.find((item) => item.priority === priority);
-    return { label: `P${priority}`, count: row ? row.count : 0 };
-  });
-}
+const PAGES = [
+  { id: "user", label: "As user" },
+  { id: "admin", label: "As admin" },
+  { id: "super_admin", label: "As super admin" },
+];
 
-function toCategoryBars(byCategory) {
-  return byCategory.map((row) => ({
-    label: row.category ? row.category.replaceAll("_", " ") : "uncategorized",
-    count: row.count,
-  }));
+// The saved login ({ token, email, role }), so a page refresh doesn't log the user out.
+function loadSavedSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY));
+  } catch {
+    return null;
+  }
 }
 
 function App() {
-  const [overview, setOverview] = useState(null);
-  const [updatedAt, setUpdatedAt] = useState(null);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [session, setSession] = useState(loadSavedSession);
+  const [currentPage, setCurrentPage] = useState("super_admin");
 
-  useEffect(() => {
-    function loadOverview() {
-      fetchOverview()
-        .then((data) => {
-          setOverview(data);
-          setUpdatedAt(new Date());
-          setErrorMessage("");
-        })
-        .catch(() => setErrorMessage("Could not load the dashboard. Is the backend running?"));
+  function handleLogin(newSession) {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(newSession));
+    } catch {
+      // Storage blocked (private window): the login still works until the page is refreshed.
     }
+    setSession(newSession);
+  }
 
-    loadOverview();
-    const timer = setInterval(loadOverview, REFRESH_EVERY_MS);
-    return () => clearInterval(timer);
-  }, []);
+  function handleLogout() {
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch {
+      // Nothing saved, nothing to remove.
+    }
+    setSession(null);
+    setCurrentPage("super_admin");
+  }
+
+  if (session === null) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
 
   return (
     <>
-      <Navbar title="ResolveOps" updatedAt={updatedAt} />
+      <Navbar title="ResolveOps" session={session} onLogout={handleLogout}>
+        <PageTabs pages={PAGES} currentPage={currentPage} onChange={setCurrentPage} />
+      </Navbar>
 
-      <main className="dashboard">
-        {errorMessage && <p className="dashboard-message dashboard-error">{errorMessage}</p>}
-
-        {!errorMessage && overview === null && <p className="dashboard-message">Loading dashboard...</p>}
-
-        {overview !== null && (
-          <>
-            <section className="kpi-row">
-              <StatCard
-                label="AI deflection rate"
-                value={`${overview.kpis.deflection_rate}%`}
-                hint="of tickets fixed by the AI suggestion"
-                highlight
-              />
-              <StatCard label="Total tickets" value={overview.kpis.total} hint="raised in Slack" />
-              <StatCard label="Open" value={overview.kpis.open} hint="waiting for a fix" />
-              <StatCard label="Resolved by AI" value={overview.kpis.solved_by_ai} hint="no admin needed" />
-              <StatCard label="Needs review" value={overview.kpis.needs_review} hint="flagged by the AI guard" />
-            </section>
-
-            <section className="chart-row">
-              <BarChartCard
-                title="Tickets by category"
-                subtitle="How the AI classified each issue"
-                data={toCategoryBars(overview.by_category)}
-              />
-              <BarChartCard
-                title="Tickets by priority"
-                subtitle="P1 is the most urgent"
-                data={toPriorityBars(overview.by_priority)}
-              />
-            </section>
-
-            <section className="list-row">
-              <TicketList
-                title="Recent tickets"
-                subtitle="The last 10 tickets raised"
-                tickets={overview.recent}
-                emptyMessage="No tickets yet."
-              />
-              <TicketList
-                title="Caught by the AI guard"
-                subtitle="Spam, prompt injection and unclear tickets"
-                tickets={overview.flagged}
-                emptyMessage="Nothing flagged. All clear."
-                showFlag
-              />
-            </section>
-          </>
-        )}
-      </main>
+      {currentPage === "user" && <UserPage token={session.token} onUnauthorized={handleLogout} />}
+      {currentPage === "admin" && <AdminPage token={session.token} onUnauthorized={handleLogout} />}
+      {currentPage === "super_admin" && <SuperAdminPage token={session.token} onUnauthorized={handleLogout} />}
     </>
   );
 }
