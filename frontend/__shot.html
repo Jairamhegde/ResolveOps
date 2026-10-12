@@ -1,0 +1,17 @@
+<!doctype html><body style="margin:0">
+<iframe id="f" style="width:100vw;height:100vh;border:0"></iframe>
+<script>
+localStorage.clear();
+const tab = new URLSearchParams(location.search).get("tab");
+const f = document.getElementById("f");
+f.src = "/";
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const click = (text) => [...f.contentDocument.querySelectorAll("button")].find((b) => b.textContent.trim() === text).click();
+f.onload = async () => {
+  await wait(800);
+  if (tab === "login") return;
+  click("Sign in");
+  await wait(1200);
+  if (tab) click(tab);
+};
+</script>

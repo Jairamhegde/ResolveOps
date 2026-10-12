@@ -3,12 +3,15 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.models import Ticket
+from backend.models import Ticket, User
 
 
 ACTIVE_STATUS = "active"
 RESOLVED_STATUS = "resolved"
 AI_RESOLVER = "ai"
+
+# Older tickets were saved as "Network" or "Account Access"; this matches them with "network" and "account_access".
+NORMALIZED_CATEGORY = func.lower(func.replace(Ticket.category, " ", "_"))
 
 
 def count_total_tickets(db: Session) -> int:
@@ -76,11 +79,9 @@ def count_needs_review(db: Session) -> int:
 
 def count_tickets_by_category(db: Session) -> list[tuple[str, int]]:
     """(category, ticket count) pairs, largest first."""
-    # Older tickets were saved as "Hardware" or "Account Access"; count them with "hardware" and "account_access".
-    category = func.lower(func.replace(Ticket.category, " ", "_"))
     return (
-        db.query(category, func.count(Ticket.id))
-        .group_by(category)
+        db.query(NORMALIZED_CATEGORY, func.count(Ticket.id))
+        .group_by(NORMALIZED_CATEGORY)
         .order_by(func.count(Ticket.id).desc())
         .all()
     )
@@ -109,5 +110,36 @@ def get_flagged_tickets(db: Session, limit: int = 20) -> list[Ticket]:
         .filter(Ticket.needs_review == True)
         .order_by(Ticket.created_at.desc().nulls_last())
         .limit(limit)
+        .all()
+    )
+
+
+def get_users_with_tickets(db: Session) -> list[User]:
+    """Every user who has raised at least one ticket, by name."""
+    return (
+        db.query(User)
+        .join(Ticket, Ticket.slack_id == User.slack_id)
+        .distinct()
+        .order_by(User.name)
+        .all()
+    )
+
+
+def get_tickets_of_user(db: Session, slack_id: str) -> list[Ticket]:
+    """All tickets one user has raised, newest first."""
+    return (
+        db.query(Ticket)
+        .filter(Ticket.slack_id == slack_id)
+        .order_by(Ticket.created_at.desc().nulls_last())
+        .all()
+    )
+
+
+def get_tickets_in_category(db: Session, category: str) -> list[Ticket]:
+    """All tickets in one category, most urgent first."""
+    return (
+        db.query(Ticket)
+        .filter(NORMALIZED_CATEGORY == category)
+        .order_by(Ticket.priority, Ticket.created_at.desc().nulls_last())
         .all()
     )
