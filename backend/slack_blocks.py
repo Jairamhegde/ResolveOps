@@ -1,12 +1,11 @@
-import time
 from datetime import datetime, timedelta, timezone
 
-from logger import logger
 from backend.sla import SLA_WINDOWS, to_utc
 
 
 ISSUE_PREVIEW_CHARS = 280
-# Slack section text is capped at 3000 chars
+CARD_TITLE_CHARS = 150
+CARD_BODY_CHARS = 200
 SUGGESTED_FIX_CHARS = 2800
 RESOLVE_ACTION_ID = "resolve_ticket"
 FIX_RESOLVED_ACTION_ID = "ai_fix_resolved"
@@ -20,16 +19,11 @@ PRIORITY_META = {
     5: ("🔵", "Minimal"),
 }
 
-CATEGORY_EMOJI = {
-    "network": "🌐",
-    "hardware": "🖥️",
-    "software": "💾",
-    "account_access": "🔐",
-    "spam": "🚫",
-}
 
+def section_divider() -> dict:
+    """Horizontal rule between sections; also closes every message so consecutive ones stay separated."""
+    return {"type": "divider"}
 
-# Formatting helpers
 
 def escape_mrkdwn(text: str) -> str:
     """Escape user text so it can't inject mentions like <!channel> or links into Slack."""
@@ -60,8 +54,6 @@ def slack_date(value: datetime, token_format: str = "{date_short_pretty} at {tim
     return f"<!date^{int(value.timestamp())}^{token_format}|{fallback}>"
 
 
-# Ticket list (/listissue)
-
 def build_sla_text(ticket, now: datetime) -> str:
     sla_window = SLA_WINDOWS.get(ticket.priority)
     if sla_window is None:
@@ -78,62 +70,39 @@ def build_sla_text(ticket, now: datetime) -> str:
 
 
 def build_resolve_button(ticket) -> dict:
-    """Resolve button with a confirmation dialog; handled by the interactions endpoint via RESOLVE_ACTION_ID."""
-    issue_preview = escape_mrkdwn(truncate((ticket.issue_text or "No description").strip(), 120))
-
+    """Resolve button on a ticket card; handled by the interactions endpoint via RESOLVE_ACTION_ID."""
     return {
         "type": "button",
-        "action_id": RESOLVE_ACTION_ID,
-        "value": str(ticket.id),
+        "text": {"type": "plain_text", "text": "Resolve", "emoji": False},
         "style": "primary",
-        "text": {"type": "plain_text", "text": "Resolve", "emoji": True},
-        "confirm": {
-            "title": {"type": "plain_text", "text": f"Resolve ticket #{ticket.id}?"},
-            "text": {
-                "type": "mrkdwn",
-                "text": f"This will close the ticket.\n> {issue_preview}"
-            },
-            "confirm": {"type": "plain_text", "text": "Resolve"},
-            "deny": {"type": "plain_text", "text": "Cancel"},
-            "style": "primary"
-        }
+        "action_id": RESOLVE_ACTION_ID,
+        "value": str(ticket.id)
     }
 
 
-def build_ticket_card(ticket, now: datetime) -> list:
-    emoji, label = PRIORITY_META.get(ticket.priority, ("⚪", "Unknown"))
-    category = (ticket.category or "other").lower().replace(" ", "_")
-    category_emoji = CATEGORY_EMOJI.get(category, "📁")
+def build_ticket_card(ticket, now: datetime) -> dict:
+    """One ticket as a Slack card block: id and priority, category and reporter, the issue, and SLA status."""
+    priority_label = PRIORITY_META.get(ticket.priority, ("", "Unknown"))[1]
+    category = (ticket.category or "other").replace("_", " ").title()
+    issue = escape_mrkdwn(truncate((ticket.issue_text or "No description").strip(), CARD_BODY_CHARS))
 
-    issue = escape_mrkdwn(truncate((ticket.issue_text or "No description").strip(), ISSUE_PREVIEW_CHARS))
-    quoted_issue = "> " + issue.replace("\n", "\n> ")
-
-    meta = [
-        f"<@{ticket.slack_id}>",
-        f"{category_emoji} {escape_mrkdwn(category.replace('_', ' ').title())}",
-    ]
-    if ticket.needs_review:
-        meta.insert(0, f"⚠️ *Needs review* ({ticket.flag.replace('_', ' ')})")
+    subtitle = f"{category} · Submitted by <@{ticket.slack_id}>"
     if ticket.created_at:
-        meta.append(f"Opened {slack_date(ticket.created_at)}")
-    meta.append(build_sla_text(ticket, now))
+        subtitle += f" · {slack_date(ticket.created_at, '{date_short}')}"
 
-    return [
-        {
-            "type": "section",
-            "block_id": f"ticket_{ticket.id}",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"{emoji} *P{ticket.priority} · {label}*  ·  `#{ticket.id}`\n{quoted_issue}"
-            },
-            "accessory": build_resolve_button(ticket)
-        },
-        {
-            "type": "context",
-            "elements": [{"type": "mrkdwn", "text": "   ·   ".join(meta)}]
-        },
-        {"type": "divider"}
-    ]
+    subtext = build_sla_text(ticket, now)
+    if ticket.needs_review:
+        subtext = f"*Needs review* ({ticket.flag.replace('_', ' ')}) · {subtext}"
+
+    return {
+        "type": "card",
+        "block_id": f"ticket_{ticket.id}",
+        "title": {"type": "mrkdwn", "text": f"T{ticket.id}  P{ticket.priority} {priority_label.upper()}", "verbatim": False},
+        "subtitle": {"type": "mrkdwn", "text": subtitle, "verbatim": False},
+        "body": {"type": "mrkdwn", "text": issue, "verbatim": False},
+        "subtext": {"type": "mrkdwn", "text": subtext, "verbatim": False},
+        "actions": [build_resolve_button(ticket)]
+    }
 
 
 def build_ticket_blocks(tickets, priority_counts: dict, total_active: int, notice: str = None) -> list:
@@ -166,14 +135,14 @@ def build_ticket_blocks(tickets, priority_counts: dict, total_active: int, notic
             "type": "section",
             "text": {"type": "mrkdwn", "text": breakdown or "_No priority data_"}
         },
-        {"type": "divider"},
+        section_divider(),
     ]
 
     if notice:
         blocks.insert(1, build_notice_block(notice))
 
     for ticket in tickets:
-        blocks.extend(build_ticket_card(ticket, now))
+        blocks.append(build_ticket_card(ticket, now))
 
     footer = "Click *Resolve* on a ticket, or use `/resolve &lt;id&gt;`"
     if total_active > len(tickets):
@@ -184,7 +153,9 @@ def build_ticket_blocks(tickets, priority_counts: dict, total_active: int, notic
         "elements": [{"type": "mrkdwn", "text": footer}]
     })
 
-    return blocks[:50]
+    blocks = blocks[:49]
+    blocks.append(section_divider())
+    return blocks
 
 
 def build_empty_ticket_blocks(notice: str = None) -> list:
@@ -202,6 +173,7 @@ def build_empty_ticket_blocks(notice: str = None) -> list:
     if notice:
         blocks.insert(1, build_notice_block(notice))
 
+    blocks.append(section_divider())
     return blocks
 
 
@@ -231,11 +203,33 @@ def build_resolution_dm_blocks(ticket_id: int, issue_text: str, admin_id: str) -
             "elements": [
                 {"type": "mrkdwn", "text": f"Resolved by <@{admin_id}>   ·   Still having trouble? File a new ticket with `/ticket`"}
             ]
-        }
+        },
+        section_divider()
     ]
 
 
-# AI suggested fix (/ticket)
+def build_fix_feedback_actions(ticket_id: int) -> dict:
+    """Resolved / Not resolved buttons for an AI suggested fix; handled by the interactions endpoint."""
+    return {
+        "type": "actions",
+        "block_id": f"fix_feedback_{ticket_id}",
+        "elements": [
+            {
+                "type": "button",
+                "action_id": FIX_RESOLVED_ACTION_ID,
+                "value": str(ticket_id),
+                "style": "primary",
+                "text": {"type": "plain_text", "text": "Resolved", "emoji": True}
+            },
+            {
+                "type": "button",
+                "action_id": FIX_NOT_RESOLVED_ACTION_ID,
+                "value": str(ticket_id),
+                "style": "danger",
+                "text": {"type": "plain_text", "text": "Not resolved", "emoji": True}
+            }
+        ]
+    }
 
 def build_suggested_fix_blocks(ticket_id: int, suggested_fix: str) -> list:
     """Suggested fix with Resolved / Not resolved buttons; handled by the interactions endpoint."""
@@ -250,43 +244,32 @@ def build_suggested_fix_blocks(ticket_id: int, suggested_fix: str) -> list:
             "type": "context",
             "elements": [{"type": "mrkdwn", "text": "Did this fix your issue?"}]
         },
-        {
-            "type": "actions",
-            "block_id": f"fix_feedback_{ticket_id}",
-            "elements": [
-                {
-                    "type": "button",
-                    "action_id": FIX_RESOLVED_ACTION_ID,
-                    "value": str(ticket_id),
-                    "style": "primary",
-                    "text": {"type": "plain_text", "text": "Resolved", "emoji": True}
-                },
-                {
-                    "type": "button",
-                    "action_id": FIX_NOT_RESOLVED_ACTION_ID,
-                    "value": str(ticket_id),
-                    "style": "danger",
-                    "text": {"type": "plain_text", "text": "Not resolved", "emoji": True}
-                }
-            ]
-        }
+        build_fix_feedback_actions(ticket_id),
+        section_divider()
     ]
 
 
 def build_ticket_received_blocks(ticket_id: int, suggested_fix: str = None) -> list:
-    """Confirmation for tickets that go straight to IT; shows the AI fix as a tip when there is one."""
+    """Confirmation for tickets that go straight to IT; shows the AI fix as a tip with feedback buttons when there is one."""
     blocks = []
     if suggested_fix:
         fix = escape_mrkdwn(truncate(suggested_fix.strip(), SUGGESTED_FIX_CHARS))
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*💡 While you wait, try this*  ·  `#{ticket_id}`\n{fix}"}
+            "text": {"type": "mrkdwn", "text": f"*While you wait, try this*  ·  `#{ticket_id}`\n{fix}"}
         })
 
     blocks.append({
         "type": "context",
         "elements": [{"type": "mrkdwn", "text": f"📨 Ticket `#{ticket_id}` has been sent to IT support. An admin will follow up."}]
     })
+    if suggested_fix:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "Did this fix your issue?"}]
+        })
+        blocks.append(build_fix_feedback_actions(ticket_id))
+    blocks.append(section_divider())
     return blocks
 
 
@@ -307,137 +290,93 @@ def build_fix_feedback_result_blocks(ticket_id: int, suggested_fix: str, resolve
         {
             "type": "context",
             "elements": [{"type": "mrkdwn", "text": outcome}]
-        }
+        },
+        section_divider()
     ]
 
 
-# GitHub notifications
+def github_date(raw_date: str) -> str:
+    """Show a GitHub ISO timestamp in each viewer's own Slack timezone, or the raw text if it can't be parsed."""
+    try:
+        parsed_date = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+    except ValueError:
+        return str(raw_date)
+    return slack_date(parsed_date)
 
-def build_gitpushdetail_block(detail: dict):
-    modified_files = detail.get('modified', [])
 
-    # Format the list of files nicely, or show 'None'
-    if modified_files:
-        modified_text = ", ".join(f"`{f}`" for f in modified_files)
-    else:
-        modified_text = "`None`"
-
-    # Format the commit message as a blockquote
-    message = detail.get('message') or 'No message provided'
-    quoted_message = "> " + message.replace("\n", "\n> ")
-
-    raw_date = detail.get('date')
-    unix_ts = int(time.time())
-    fallback_date = None
-    if raw_date:
-        try:
-            dt = datetime.fromisoformat(str(raw_date).replace('Z', '+00:00'))
-            unix_ts = int(dt.timestamp())
-            fallback_date = dt.strftime('%b %d, %Y at %I:%M %p')
-        except Exception as e:
-            logger.warning(f"Could not parse push date '{raw_date}': {e}")
-            fallback_date = str(raw_date)
-    if not fallback_date:
-        fallback_date = datetime.now().strftime('%b %d, %Y at %I:%M %p')
-
-    date_display = f"<!date^{unix_ts}^{{date_short}} at {{time}}|{fallback_date}>"
-
-    block = [
+def build_github_card(title: str, subtitle: str, body: str, footer: str) -> list:
+    """A GitHub notification: a card with the details and a context line with the link underneath."""
+    return [
         {
-            "type": "header",
-            "text": {"type": "plain_text", "text": "🔹New GitHub Push", "emoji": True}
+            "type": "card",
+            "title": {"type": "mrkdwn", "text": truncate(title, CARD_TITLE_CHARS), "verbatim": False},
+            "subtitle": {"type": "mrkdwn", "text": truncate(subtitle, CARD_TITLE_CHARS), "verbatim": False},
+            "body": {"type": "mrkdwn", "text": truncate(body, CARD_BODY_CHARS), "verbatim": False}
         },
         {
             "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": f"*Pushed by:* @{detail.get('name') or 'Unknown'}"},
-                {"type": "mrkdwn", "text": f"*Date:* {date_display}"}
-            ]
+            "elements": [{"type": "mrkdwn", "text": footer}]
         },
-        {"type": "divider"},
-        {
-            "type": "section",
-            "fields": [
-                {"type": "mrkdwn", "text": f"*Event Type:*\n`{detail.get('event')}`"},
-                {"type": "mrkdwn", "text": f"*Files Changed:*\n`{len(modified_files)}`"}
-            ]
-        },
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Modified Files:*\n{modified_text}"}
-        },
-        {"type": "divider"},
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Commit Message:*\n{quoted_message}"}
-        }
+        section_divider()
     ]
-    return block
 
 
-def build_gitprdetail_block(detail: dict):
-    # Format the PR description as a blockquote
-    body = detail.get('body') or 'No description provided'
-    quoted_body = "> " + body.replace("\n", "\n> ")
+def build_gitpushdetail_block(detail: dict) -> list:
+    repo = escape_mrkdwn(detail.get("repo") or "unknown repo")
+    branch = escape_mrkdwn(detail.get("branch") or "unknown branch")
+    pusher = escape_mrkdwn(detail.get("name") or "Unknown")
+    changed_files = len(detail.get("changed_files") or [])
+    commit_message = escape_mrkdwn((detail.get("message") or "No commit message").strip())
 
-    block = [
-        {
-            "type": "header",
-            "text": {"type": "plain_text", "text": "Pull Request Update", "emoji": True}
-        },
-        {
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": f"*Triggered by:* @{detail.get('user')}"},
-                {"type": "mrkdwn", "text": f"*Repository:* {detail.get('repo')}"}
-            ]
-        },
-        {"type": "divider"},
-        {
-            "type": "section",
-            "fields": [
-                {"type": "mrkdwn", "text": f"*Action:*\n`{detail.get('action')}`"},
-                {"type": "mrkdwn", "text": f"*Status:*\n`{detail.get('state')}`"}
-            ]
-        },
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Title:*\n<{detail.get('url')}|{detail.get('title')}>"}
-        },
-        {"type": "divider"},
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Description:*\n{quoted_body}"}
-        }
-    ]
-    return block
+    footer = "Event: push"
+    if detail.get("date"):
+        footer += f" · {github_date(detail['date'])}"
+    if detail.get("url"):
+        footer += f" · <{detail['url']}|View commit on GitHub>"
+
+    return build_github_card(
+        title=f"New push to {repo} ({branch})",
+        subtitle=f"Pushed by {pusher} · {changed_files} file(s) changed",
+        body=commit_message,
+        footer=footer
+    )
 
 
-def build_workflow_detail_block(event, name, status, conclusion, html_url):
-    block = [
-        {
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": f"Workflow Run: {name}",
-                "emoji": True
-            }
-        },
-        {
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": f"*Event:* `{event}`"},
-                {"type": "mrkdwn", "text": f"*Status:* {status}"},
-                {"type": "mrkdwn", "text": f"*Conclusion:* {conclusion}"}
-            ]
-        },
-        {"type": "divider"},
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"<{html_url}|View Workflow Run on GitHub>"
-            }
-        }
-    ]
-    return block
+def build_gitprdetail_block(detail: dict) -> list:
+    number = detail.get("number")
+    pr_title = escape_mrkdwn(detail.get("title") or "Untitled pull request")
+    repo = escape_mrkdwn(detail.get("repo") or "unknown repo")
+    author = escape_mrkdwn(detail.get("user") or "Unknown")
+    status = "Merged" if detail.get("merged") else (detail.get("state") or "unknown").capitalize()
+    description = escape_mrkdwn((detail.get("body") or "No description provided").strip())
+
+    footer = f"Event: pull request {detail.get('action')}"
+    if detail.get("url"):
+        footer += f" · <{detail['url']}|View pull request on GitHub>"
+
+    return build_github_card(
+        title=f"PR #{number}: {pr_title}",
+        subtitle=f"{repo} · Opened by {author} · Status: {status}",
+        body=description,
+        footer=footer
+    )
+
+
+def build_workflow_detail_block(detail: dict) -> list:
+    name = escape_mrkdwn(detail.get("name") or "Unnamed workflow")
+    repo = escape_mrkdwn(detail.get("repo") or "unknown repo")
+    branch = escape_mrkdwn(detail.get("branch") or "unknown branch")
+    actor = escape_mrkdwn(detail.get("actor") or "Unknown")
+    status = detail.get("status") or "unknown"
+    conclusion = detail.get("conclusion") or "pending"
+
+    footer = f"Event: {detail.get('event')}"
+    if detail.get("url"):
+        footer += f" · <{detail['url']}|View workflow run on GitHub>"
+
+    return build_github_card(
+        title=f"Workflow: {name}",
+        subtitle=f"{repo} · Branch: {branch} · Triggered by {actor}",
+        body=f"Status: {status} · Conclusion: {conclusion}",
+        footer=footer
+    )

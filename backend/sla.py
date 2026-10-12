@@ -14,7 +14,6 @@ SLA_WINDOWS = {
 }
 
 
-# How long a user has to answer the AI suggested fix before the ticket goes to admins
 PENDING_RESPONSE_WINDOW = timedelta(hours=5)
 
 
@@ -43,7 +42,6 @@ def escalate_active_tickets():
             if sla_window is None:
                 continue
 
-            # Fall back to created_at for tickets created before escalated_at existed
             last_escalated = ticket.escalated_at or ticket.created_at
             if last_escalated is None:
                 logger.warning(f"Ticket {ticket.id} has no escalated_at or created_at, skipping")
@@ -81,7 +79,6 @@ def activate_stale_pending_tickets():
         for ticket in tickets:
             ticket.status = 'active'
             ticket.resolved_by = None
-            # Start the SLA clock now, not from created_at
             ticket.escalated_at = utc_now_naive()
 
         db.commit()

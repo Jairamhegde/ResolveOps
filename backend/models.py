@@ -28,7 +28,6 @@ class User(Base):
 class Ticket(Base):
     __tablename__ = "ticket"
     __table_args__ = (
-        # resolved_by may only be set once the ticket is resolved
         CheckConstraint(
             "resolved_by IS NULL OR status = 'resolved'",
             name="ck_ticket_resolved_by_requires_resolved",

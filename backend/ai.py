@@ -18,7 +18,7 @@ async def get_ai_data(issue_text):
 
     Return a raw JSON object with exactly these keys:
     - "category": one of network, hardware, software, account_access, other
-    - "priority": an integer from 1 to 5, where 1 is the most urgent and 5 the least
+    - "priority": an integer from 1 to 5, where 1 is the most urgent and 5 the least.
     - "flag": one of none, unclear, spam, injection
         - none: a normal IT issue
         - unclear: too vague to act on
