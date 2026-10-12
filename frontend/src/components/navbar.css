@@ -1,0 +1,67 @@
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 64px;
+  padding: 0 24px;
+  background-color: var(--panel-background);
+  border-bottom: 1px solid var(--border);
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.navbar-logo {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--brand-start), var(--brand-end));
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.navbar-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.navbar-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.navbar-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Pulsing green dot: the data refreshes on its own */
+.navbar-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--good);
+  animation: navbar-pulse 2s ease-in-out infinite;
+}
+
+@keyframes navbar-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 720px) {
+  .navbar-subtitle {
+    display: none;
+  }
+}

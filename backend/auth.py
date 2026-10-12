@@ -4,16 +4,38 @@ import hmac
 import hashlib
 import httpx
 from fastapi import Request, HTTPException
-from backend.database import SessionLocal
+from sqlalchemy.orm import Session
 from backend.models import User, Admin
+from backend.schemas import AdminType
 from dotenv import load_dotenv
 
 load_dotenv()
 
-async def verify_admin(user_id: str, check_type: str = "admin"):
+def is_admin_in_database(db: Session, user_id: str, user_email: str, check_type: str = "admin") -> bool:
+    """Check the database: is this user an admin (check_type "admin"), a super_admin, or any registered user?"""
+    if check_type == "admin":
+        found = db.query(Admin).filter(
+            Admin.slack_id == user_id,
+            Admin.email == user_email
+        ).first()
+    elif check_type == "super_admin":
+        found = db.query(Admin).filter(
+            Admin.slack_id == user_id,
+            Admin.email == user_email,
+            Admin.role == AdminType.super_admin.value
+        ).first()
+    else:
+        found = db.query(User).filter(
+            User.slack_id == user_id,
+            User.email == user_email
+        ).first()
+    return found is not None
 
-    tocken = os.getenv("BOT_AUTH_TOCKEN")
-    headers = {"Authorization": f"Bearer {tocken}"}
+
+async def verify_admin(db: Session, user_id: str, check_type: str = "admin") -> bool:
+    """Look up the user's email on Slack, then check the database with is_admin_in_database."""
+    token = os.getenv("BOT_AUTH_TOKEN")
+    headers = {"Authorization": f"Bearer {token}"}
     url = f"https://slack.com/api/users.info?user={user_id}"
 
     async with httpx.AsyncClient() as client:
@@ -24,33 +46,18 @@ async def verify_admin(user_id: str, check_type: str = "admin"):
         return False
 
     user_email = request_email.get('user', {}).get('profile', {}).get('email')
-
-    db = SessionLocal()
-    try:
-        if check_type == "admin":
-            found = db.query(Admin).filter(
-                Admin.slack_id == user_id,
-                Admin.email == user_email
-            ).first()
-        else:
-            found = db.query(User).filter(
-                User.slack_id == user_id,
-                User.email == user_email
-            ).first()
-        return found is not None
-    finally:
-        db.close()
+    return is_admin_in_database(db, user_id, user_email, check_type)
 
 from logger import logger
 
 async def verify_slack_signature(request: Request):
-    signing_signature = (os.getenv("SIGNING_SECRETE") or os.getenv("SIGNING_SECRET") or "").strip()
+    signing_secret = (os.getenv("SIGNING_SECRET") or "").strip()
     time_stamp = request.headers.get("X-Slack-Request-Timestamp")
     slack_signature = request.headers.get("X-Slack-Signature")
 
-    if not signing_signature:
-        logger.error("Server configuration error: SIGNING_SECRET / SIGNING_SECRETE is missing in environment variables.")
-        raise HTTPException(status_code=500, detail="Server configuration error: SIGNING_SECRETE missing")
+    if not signing_secret:
+        logger.error("Server configuration error: SIGNING_SECRET is missing in environment variables.")
+        raise HTTPException(status_code=500, detail="Server configuration error: SIGNING_SECRET missing")
 
     if not slack_signature or not time_stamp:
         logger.warning("Missing Slack signature or timestamp headers")
@@ -68,7 +75,7 @@ async def verify_slack_signature(request: Request):
     body = await request.body() 
     basestring = f"v0:{time_stamp}:{body.decode()}"
     my_signature = "v0=" + hmac.new(
-        signing_signature.encode(),
+        signing_secret.encode(),
         basestring.encode(),
         hashlib.sha256
     ).hexdigest()
@@ -83,10 +90,10 @@ async def verify_github_signature(request: Request):
         logger.warning("GitHub webhook request missing X-Hub-Signature-256 header")
         raise HTTPException(status_code=403, detail="No github signature..")
 
-    github_secret = (os.getenv('GITHUB_SECRETE') or os.getenv('GITHUB_SECRET') or "").strip()
+    github_secret = (os.getenv('GITHUB_SECRET') or "").strip()
     if not github_secret:
-        logger.error("Neither GITHUB_SECRETE nor GITHUB_SECRET environment variable is set on the server!")
-        raise HTTPException(status_code=500, detail="No github secrete found.")
+        logger.error("GITHUB_SECRET environment variable is not set on the server!")
+        raise HTTPException(status_code=500, detail="No github secret found.")
 
     body = await request.body()
     hashed = hmac.new(

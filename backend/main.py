@@ -2,11 +2,15 @@ from typing import Dict, Optional, Any
 import json
 import os
 from fastapi import FastAPI, Request, BackgroundTasks, Depends, Header, Response
-from backend.auth import verify_slack_signature, verify_admin, verify_github_signature
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
+from backend.auth import verify_slack_signature, verify_github_signature
+from backend.schemas import AdminType, ValidateAdmin
+from backendapi.routes.dashboard_routes import router as dashboard_router
 from backend.crud import (
-    insert_ticket_atbackground,
+    insert_ticket_background,
     background_listissue,
-    backround_procces_resolve,
+    background_process_resolve,
     insert_admin_background,
     background_fix_feedback
 )
@@ -27,6 +31,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 app = FastAPI()
 load_dotenv()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")],
+    allow_methods=["GET"],
+)
+
+app.include_router(dashboard_router)
+
 scheduler = BackgroundScheduler()
 
 @app.on_event('startup')
@@ -41,7 +53,6 @@ def shutdown_scheduler():
     scheduler.shutdown()
     logger.info("Scheduler shutdown.")
 
-##---------------------Helpdesk Endpoint-------------------------
 
 @app.post('/webhook/ticket', dependencies=[Depends(verify_slack_signature)])
 async def webhook(request: Request, background_tasks: BackgroundTasks):
@@ -51,12 +62,12 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     user_name = response.get("user_name")
     issue_text = response.get("text")
 
-    background_tasks.add_task(insert_ticket_atbackground, user_id, issue_text, user_name,response_url)
+    background_tasks.add_task(insert_ticket_background, user_id, issue_text, user_name,response_url)
     return {"text": "Complaint has been sent."}
 
 
 @app.post('/webhook/listissue', dependencies=[Depends(verify_slack_signature)])
-async def resolve_issue(request: Request, background_tasks: BackgroundTasks):
+async def list_issues(request: Request, background_tasks: BackgroundTasks):
     response = await request.form()
     user_id = response.get('user_id')
     response_url = response.get('response_url')
@@ -69,8 +80,8 @@ async def resolve_issue(request: Request, background_tasks: BackgroundTasks):
 
 
 @app.post('/webhook/resolve', dependencies=[Depends(verify_slack_signature)])
-async def resolve_ticket(resolve: Request, background_tasks: BackgroundTasks):
-    form = await resolve.form()
+async def resolve_ticket(request: Request, background_tasks: BackgroundTasks):
+    form = await request.form()
     response_url = form.get('response_url')
     user_id = form.get('user_id')
     command_text = form.get('text', '').strip()
@@ -83,23 +94,34 @@ async def resolve_ticket(resolve: Request, background_tasks: BackgroundTasks):
     
     ticket_id = int(command_text)
     
-    background_tasks.add_task(backround_procces_resolve, user_id, ticket_id, response_url)
+    background_tasks.add_task(background_process_resolve, user_id, ticket_id, response_url)
     return {"text": "Resolving..."}
 
 @app.get('/api/health')
 async def health_check():
     return {"status": "ok"}
 
+
 @app.post('/webhook/add-admin',dependencies=[Depends(verify_slack_signature)])
 async def add_admin(request: Request, background_tasks: BackgroundTasks):
     form = await request.form()
     response_url = form.get('response_url')
     user_id = form.get('user_id')
-    slack_id = form.get("text", "").strip()
-    background_tasks.add_task(insert_admin_background, user_id, slack_id, response_url)
+    valid_types = ", ".join(admin_type.value for admin_type in AdminType)
+
+    parts = form.get("text", "").split()
+    if len(parts) != 2:
+        return {"text": f"Usage: `/add-admin @username admin_type`. Admin types: {valid_types}"}
+
+    slack_id, admin_type = parts
+    try:
+        admin = ValidateAdmin(role=admin_type.lower())
+    except ValidationError:
+        return {"text": f"Unknown admin type `{admin_type}`. Admin types: {valid_types}"}
+
+    background_tasks.add_task(insert_admin_background, user_id, slack_id, response_url, admin.role)
     return {'text': f'Processing request...:{slack_id}'}
 
-# 
 @app.post("/webhook/github", dependencies=[Depends(verify_github_signature)])
 async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[str] = Header(None, alias="X-GitHub-Event")):
     if not x_github_event:
@@ -120,29 +142,35 @@ async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[s
             logger.info(f"Ignoring GitHub event: no channel mapping for repository '{reponame}'")
             return {"status": "ignored", "reason": f"No channel mapping for repository: {reponame}"}
 
-        bot_token = (os.getenv('BOT_AUTH_TOCKEN') or os.getenv('BOT_AUTH_TOKEN') or os.getenv('SLACK_BOT_TOKEN') or "").strip()
+        bot_token = (os.getenv('BOT_AUTH_TOKEN') or "").strip()
 
         if x_github_event == "push":
             commit_details = payload.get('head_commit') or {}
             
             if commit_details:
-                commiter_name = commit_details.get('author', {}).get('username') or commit_details.get('author', {}).get('name') or "Unknown"
-                comm_mess = commit_details.get("message") or "No commit message"
-                date = commit_details.get('author', {}).get('date', "")
-                modified_file = commit_details.get("modified") or []
-                
+                committer_name = commit_details.get('author', {}).get('username') or commit_details.get('author', {}).get('name') or "Unknown"
+                commit_message = commit_details.get("message") or "No commit message"
+                date = commit_details.get('timestamp', "")
+                changed_files = (
+                    (commit_details.get("added") or [])
+                    + (commit_details.get("removed") or [])
+                    + (commit_details.get("modified") or [])
+                )
+
                 details = {
-                    'event': 'push',
-                    'name': commiter_name,
+                    'repo': reponame,
+                    'branch': (payload.get('ref') or '').replace('refs/heads/', ''),
+                    'name': committer_name,
                     'date': date,
-                    'modified': modified_file,
-                    'message': comm_mess
+                    'changed_files': changed_files,
+                    'message': commit_message,
+                    'url': commit_details.get('url')
                 }
                 block = build_gitpushdetail_block(detail=details)
 
                 message = {
                     'channel': channel_id,
-                    'text': f"New push by {commiter_name}",
+                    'text': f"New push by {committer_name}",
                     'blocks': block
                 }
                 
@@ -157,7 +185,6 @@ async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[s
                     )
                 logger.info(f"Sent push notification for {reponame} to Slack channel {channel_id}")
                     
-        # Handle Pull Request Events
         elif x_github_event == "pull_request":
             action = payload.get("action")
             pr_data = payload.get("pull_request") or {}
@@ -171,6 +198,8 @@ async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[s
             
             details = {
                 "action": action,
+                "number": pr_data.get("number"),
+                "merged": pr_data.get("merged"),
                 "user": pr_user,
                 "title": pr_title,
                 "body": pr_body,
@@ -201,17 +230,21 @@ async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[s
         elif x_github_event == "workflow_run":
             body = payload.get("workflow_run") or {}
             if body:
-                event = body.get("event") or x_github_event
-                name = body.get("name", "")
-                status = body.get('status', '')
-                conclusion = body.get('conclusion', '')
-                html_url = body.get('html_url', '')
+                details = {
+                    'event': body.get('event') or x_github_event,
+                    'name': body.get('name'),
+                    'repo': reponame,
+                    'branch': body.get('head_branch'),
+                    'actor': (body.get('actor') or {}).get('login'),
+                    'status': body.get('status'),
+                    'conclusion': body.get('conclusion'),
+                    'url': body.get('html_url')
+                }
 
-                blk = build_workflow_detail_block(event, name, status, conclusion, html_url)
-                messg = {
+                workflow_message = {
                     'channel': channel_id,
-                    'text': 'Workflow Run',
-                    'blocks': blk
+                    'text': f"Workflow {details['name']}: {details['status']}",
+                    'blocks': build_workflow_detail_block(detail=details)
                 }
                 async with httpx.AsyncClient() as client:
                     await client.post(
@@ -220,7 +253,7 @@ async def get_github_updates(payload: Dict[str, Any], x_github_event: Optional[s
                             'Authorization': f"Bearer {bot_token}",
                             'Content-Type': 'application/json'
                         },
-                        json=messg
+                        json=workflow_message
                     )
                 logger.info(f"Sent workflow notification for {reponame} to Slack channel {channel_id}")
             else:
@@ -264,14 +297,8 @@ async def handle_slack_interaction(request: Request, background_tasks: Backgroun
         return Response(status_code=200)
 
     if action_id == RESOLVE_ACTION_ID:
-        background_tasks.add_task(backround_procces_resolve, user_id, int(ticket_val), response_url)
+        background_tasks.add_task(background_process_resolve, user_id, int(ticket_val), response_url)
     else:
         resolved = action_id == FIX_RESOLVED_ACTION_ID
         background_tasks.add_task(background_fix_feedback, user_id, int(ticket_val), resolved, response_url)
     return Response(status_code=200)
-
-
-
-
-
-

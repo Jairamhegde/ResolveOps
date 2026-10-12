@@ -1,6 +1,5 @@
 *.env
 noteenv
-frontend
 *__pycache__
 questions.md
 *.zip
@@ -9,3 +8,4 @@ utils/
 log.log
 
 functionalities.md
+testing/test.db

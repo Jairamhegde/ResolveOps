@@ -16,10 +16,10 @@ class Flag(str, Enum):
     unclear = "unclear"
     spam = "spam"
     injection = "injection"
-    ai_failed = "ai_failed"  # set by our code when the AI call fails, never returned by the model
+    ai_failed = "ai_failed"
 
 
-class InserTicket(BaseModel):
+class InsertTicket(BaseModel):
     slack_id: str
     issue_text: str
     category: Optional[str] = "other"
@@ -32,7 +32,7 @@ class InserTicket(BaseModel):
 class CreateAdmin(BaseModel):
     slack_id: str
     email: str
-    role: Optional[str] = "it support"
+    role: str
 
 class CreateUser(BaseModel):
     slack_id: str
@@ -45,3 +45,16 @@ class AiResponseModel(BaseModel):
     priority: int
     flag: Flag
     suggested_fix: str
+
+
+class AdminType(str, Enum):
+    """Values stored in admin.role, always lowercase. Only a super_admin can add new admins."""
+    hardware = "hardware"
+    network = "network"
+    software = "software"
+    iam = "iam"
+    super_admin = "super_admin"
+    other = "other"
+
+class ValidateAdmin(BaseModel):
+    role: AdminType

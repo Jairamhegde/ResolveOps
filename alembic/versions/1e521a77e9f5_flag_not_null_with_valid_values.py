@@ -13,14 +13,12 @@ from alembic import op
 import sqlalchemy as sa
 
 
-# revision identifiers, used by Alembic.
 revision: str = '1e521a77e9f5'
 down_revision: Union[str, Sequence[str], None] = 'cd647f44f7d5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 FLAG_CHECK = 'ck_ticket_flag_valid'
-# Spelled out rather than imported, so this migration doesn't change if the enum does
 FLAG_VALUES = ('none', 'unclear', 'spam', 'injection', 'ai_failed')
 
 

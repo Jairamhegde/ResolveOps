@@ -1,13 +1,15 @@
+from pyparsing import DebugSuccessAction
 import os
 from datetime import datetime, timedelta
 
 import httpx
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from logger import logger
 from backend.database import SessionLocal
 from backend.models import User, Ticket, Admin, utc_now_naive
-from backend.schemas import InserTicket, CreateAdmin, CreateUser
+from backend.schemas import InsertTicket, CreateAdmin, CreateUser, AdminType, Category
 from backend.ai import get_ai_data
 from backend.auth import verify_admin
 from backend.slack_blocks import (
@@ -22,10 +24,15 @@ from backend.slack_blocks import (
 DAILY_TICKET_LIMIT = 5
 SLACK_USER_INFO_URL = "https://slack.com/api/users.info"
 
-# Slack allows max 50 blocks per message; each ticket uses 3 blocks + 5 for header/summary/footer
 LIST_ISSUE_LIMIT = 12
 
-# Slack helpers
+ADMIN_TYPE_TO_TICKET_CATEGORY = {
+    AdminType.hardware.value: Category.hardware.value,
+    AdminType.network.value: Category.network.value,
+    AdminType.software.value: Category.software.value,
+    AdminType.iam.value: Category.account_access.value,
+}
+
 async def send_slack_response(response_url: str, payload: dict):
     """Post a message back to Slack via the slash command's response_url."""
     try:
@@ -38,7 +45,7 @@ async def send_slack_response(response_url: str, payload: dict):
 
 async def fetch_slack_user(slack_id: str) -> dict:
     """Fetch a user's profile from the Slack users.info API."""
-    token = os.getenv("BOT_AUTH_TOCKEN")
+    token = os.getenv("BOT_AUTH_TOKEN")
     headers = {"Authorization": f"Bearer {token}"}
 
     async with httpx.AsyncClient() as client:
@@ -53,11 +60,8 @@ async def fetch_slack_user(slack_id: str) -> dict:
     return user_data
 
 
-# Database operations
-
-def insert_to_ticket(details: InserTicket):
+def insert_to_ticket(db: Session, details: InsertTicket):
     """Insert a ticket and return its id, or None if the insert failed."""
-    db = SessionLocal()
     new_ticket = Ticket(
         slack_id=details.slack_id,
         issue_text=details.issue_text,
@@ -78,12 +82,9 @@ def insert_to_ticket(details: InserTicket):
         db.rollback()
         logger.error(f"Ticket insertion failed for user {details.slack_id}: {e}")
         return None
-    finally:
-        db.close()
 
 
-def insert_admin(details: CreateAdmin):
-    db = SessionLocal()
+def insert_admin(db: Session, details: CreateAdmin):
     new_admin = Admin(
         slack_id=details.slack_id,
         email=details.email,
@@ -97,12 +98,9 @@ def insert_admin(details: CreateAdmin):
     except Exception as e:
         db.rollback()
         logger.error(f"Admin insertion failed for {details.slack_id}: {e}")
-    finally:
-        db.close()
 
 
-def insert_user(details: CreateUser):
-    db = SessionLocal()
+def insert_user(db: Session, details: CreateUser):
     new_user = User(
         slack_id=details.slack_id,
         name=details.name,
@@ -116,21 +114,17 @@ def insert_user(details: CreateUser):
     except Exception as e:
         db.rollback()
         logger.error(f"User insertion failed for {details.slack_id}: {e}")
-    finally:
-        db.close()
 
 
-async def add_admin(slack_id: str, name: str, email: str, role: str = 'it support'):
-    db = SessionLocal()
+def add_admin(db: Session, slack_id: str, name: str, email: str, role: str) -> str:
+    """Make a user an admin. Returns "success", "already_admin" or "failed"."""
     try:
-        # Create the user first if they don't exist yet
         user = db.query(User).filter(User.slack_id == slack_id).first()
         if not user:
             db.add(User(slack_id=slack_id, name=name, email=email))
             db.flush()
             logger.info(f"User {slack_id} created while adding admin")
 
-        # Skip if already an admin
         existing_admin = db.query(Admin).filter(Admin.slack_id == slack_id).first()
         if existing_admin:
             logger.info(f"{slack_id} is already an admin")
@@ -144,96 +138,90 @@ async def add_admin(slack_id: str, name: str, email: str, role: str = 'it suppor
         db.rollback()
         logger.error(f"Admin database insertion failed for {slack_id}: {e}")
         return "failed"
-    finally:
-        db.close()
 
-# Background workers (Slack slash commands)
 
-async def insert_ticket_atbackground(user_id: str, issue_text: str, user_name: str, response_url: str):
+async def create_ticket(db: Session, user_id: str, issue_text: str, user_name: str) -> dict:
+    """Register the user if needed, check the daily limit, classify the issue with AI and save the ticket. Returns the Slack reply."""
+    user_data = await fetch_slack_user(user_id)
+    if not user_data.get("ok"):
+        return {"text": "Could not verify your Slack profile. Please try again later."}
+
+    exists_user = db.query(User).filter(User.slack_id == user_id).first()
+    if not exists_user:
+        user_email = user_data.get('user', {}).get('profile', {}).get('email')
+        insert_user(db, CreateUser(slack_id=user_id, name=user_name, email=user_email))
+
+    start_of_today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_count = db.query(Ticket).filter(
+        Ticket.slack_id == user_id,
+        Ticket.created_at >= start_of_today,
+        Ticket.created_at < start_of_today + timedelta(days=1)
+    ).count()
+
+    if today_count >= DAILY_TICKET_LIMIT:
+        logger.warning(f"User {user_id} hit the daily ticket limit ({today_count})")
+        return {"text": "No more requests can be submitted today."}
+
+    ai_response = await get_ai_data(issue_text)
+    priority = ai_response.get('priority','')
+    category = ai_response.get('category','')
+    flag = ai_response.get('flag','')
+    suggested_fix = ai_response.get('suggested_fix')
+    logger.info(f"AI classified ticket from {user_id}: category={category}, priority={priority}")
+
+    if not ai_response:
+        status, priority, category, suggested_fix, flag, needs_review = 'active', 3, 'other', None, 'ai_failed', True
+    elif flag != 'none':
+        status, needs_review = 'active', True
+    elif priority <= 2 or category in {'hardware', 'account_access'}:
+        status, needs_review = 'active', False
+    else:
+        status, needs_review = 'pending_response', False
+
+    new_ticket = InsertTicket(
+        slack_id=user_id,
+        issue_text=issue_text or "",
+        priority=priority,
+        category=category,
+        status=status,
+        suggested_fix=suggested_fix,
+        flag=flag,
+        needs_review=needs_review
+    )
+
+    ticket_id = insert_to_ticket(db, new_ticket)
+    if ticket_id is None:
+        return {"text": "Could not save your ticket. Please try again later."}
+
+    if status == 'pending_response':
+        return {
+            "text": f"Suggested fix for ticket #{ticket_id}",
+            "blocks": build_suggested_fix_blocks(ticket_id, suggested_fix)
+        }
+
+    return {
+        "text": f"Ticket #{ticket_id} sent to IT support",
+        "blocks": build_ticket_received_blocks(ticket_id, None if needs_review else suggested_fix)
+    }
+
+
+async def insert_ticket_background(user_id: str, issue_text: str, user_name: str, response_url: str):
     logger.info(f"Processing new ticket from {user_id}")
+    succeded = True
     db = SessionLocal()
-
     try:
-        user_data = await fetch_slack_user(user_id)
-        if not user_data.get("ok"):
-            await send_slack_response(response_url, {"text": "Could not verify your Slack profile. Please try again later."})
-            return False
-
-        # Create the user on first request
-        exists_user = db.query(User).filter(User.slack_id == user_id).first()
-        if not exists_user:
-            user_email = user_data.get('user', {}).get('profile', {}).get('email')
-            insert_user(CreateUser(slack_id=user_id, name=user_name, email=user_email))
-
-        # Enforce the daily ticket limit before calling the AI
-        # Timezone-aware local midnight so the comparison against timestamptz is unambiguous
-        start_of_today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
-        today_count = db.query(Ticket).filter(
-            Ticket.slack_id == user_id,
-            Ticket.created_at >= start_of_today,
-            Ticket.created_at < start_of_today + timedelta(days=1)
-        ).count()
-
-        if today_count >= DAILY_TICKET_LIMIT:
-            logger.warning(f"User {user_id} hit the daily ticket limit ({today_count})")
-            await send_slack_response(response_url, {"text": "No more requests can be submitted today."})
-            return False
-
-        ai_response = await get_ai_data(issue_text)
-        priority = ai_response.get('priority','')
-        category = ai_response.get('category','')
-        flag = ai_response.get('flag','')
-        suggested_fix = ai_response.get('suggested_fix')  
-        logger.info(f"AI classified ticket from {user_id}: category={category}, priority={priority}")
-
-        # Only low-priority, unflagged, self-fixable tickets wait for the user's answer
-        if not ai_response:
-            status, priority, category, suggested_fix, flag, needs_review = 'active', 3, 'other', None, 'ai_failed', True
-        elif flag != 'none':
-            status, needs_review = 'active', True
-        elif priority <= 2 or category in {'hardware', 'account_access'}:
-            status, needs_review = 'active', False
-        else:
-            status, needs_review = 'pending_response', False
-
-        new_ticket = InserTicket(
-            slack_id=user_id,
-            issue_text=issue_text or "",
-            priority=priority,
-            category=category,
-            status=status,
-            suggested_fix=suggested_fix,
-            flag=flag,
-            needs_review=needs_review
-        )
-
-        ticket_id = insert_to_ticket(new_ticket)
-        if ticket_id is None:
-            await send_slack_response(response_url, {"text": "Could not save your ticket. Please try again later."})
-            return False
-
-        if status == 'pending_response':
-            payload = {
-                "text": f"Suggested fix for ticket #{ticket_id}",
-                "blocks": build_suggested_fix_blocks(ticket_id, suggested_fix)
-            }
-        else:
-            # Flagged tickets get no fix: the AI's answer is unreliable for them
-            payload = {
-                "text": f"Ticket #{ticket_id} sent to IT support",
-                "blocks": build_ticket_received_blocks(ticket_id, None if needs_review else suggested_fix)
-            }
-        await send_slack_response(response_url, payload)
-        return True
-
+        payload = await create_ticket(db, user_id, issue_text, user_name)
     except Exception as e:
         db.rollback()
         logger.error(f"Ticket processing failed for {user_id}: {e}")
-        await send_slack_response(response_url, {"text": "Server is not active."})
-        return False
+        payload = {"text": "Server is not active."}
+        succeded = False
+        
     finally:
         db.close()
-
+    await send_slack_response(response_url, payload)
+    
+    return succeded
 
 async def background_fix_feedback(user_id: str, ticket_id: int, resolved: bool, response_url: str):
 
@@ -253,7 +241,6 @@ async def background_fix_feedback(user_id: str, ticket_id: int, resolved: bool, 
             await send_slack_response(response_url, {"text": "Only the person who raised this ticket can respond.", "replace_original": False})
             return
 
-        # 'active' is still answerable: the 5h pending-response timeout may have moved it there
         if ticket.status not in ('pending_response', 'active'):
             logger.info(f"Ticket {ticket_id} already answered (status '{ticket.status}')")
             return
@@ -281,143 +268,174 @@ async def background_fix_feedback(user_id: str, ticket_id: int, resolved: bool, 
         db.close()
 
 
-async def backround_procces_resolve(user_id: str, ticket_id: int, response_url: str):
-    logger.info(f"Resolve request for ticket {ticket_id} by {user_id}")
+def can_admin_handle_ticket(admin: Admin, ticket: Ticket) -> bool:
+    """A super_admin can handle every ticket, other admins only tickets in their own category."""
+    if admin.role == AdminType.super_admin.value:
+        return True
 
-    is_admin = await verify_admin(user_id, 'admin')
-    if not is_admin:
-        logger.warning(f"Non-admin {user_id} tried to resolve ticket {ticket_id}")
-        await send_slack_response(response_url, {"text": "Access denied: Only admins can resolve tickets."})
-        return
+    admin_category = ADMIN_TYPE_TO_TICKET_CATEGORY.get(admin.role)
+    return admin_category is not None and admin_category == ticket.category
+
+
+def resolve_ticket(db: Session, admin_slack_id: str, ticket_id: int) -> str:
+    """Resolve a ticket if this admin is allowed to. Returns the message to show the admin."""
+    admin = db.query(Admin).filter(Admin.slack_id == admin_slack_id).first()
+    if admin is None:
+        logger.warning(f"Non-admin {admin_slack_id} tried to resolve ticket {ticket_id}")
+        return "Access denied: Only admins can resolve tickets."
+
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if ticket is None:
+        logger.warning(f"Ticket {ticket_id} not found")
+        return f"No ticket found with id {ticket_id}"
+
+    if not can_admin_handle_ticket(admin, ticket):
+        logger.warning(f"{admin.role} admin {admin_slack_id} tried to resolve {ticket.category} ticket {ticket_id}")
+        return f"Access denied: Ticket {ticket_id} is a `{ticket.category}` ticket and you are a `{admin.role}` admin."
+
+    ticket.status = 'resolved'
+    ticket.resolved_by = admin_slack_id
+    db.commit()
+    logger.info(f"Ticket {ticket_id} resolved by {admin_slack_id}")
+    return f"Resolved ticket :{ticket_id}."
+
+
+async def background_process_resolve(user_id: str, ticket_id: int, response_url: str):
+    logger.info(f"Resolve request for ticket {ticket_id} by {user_id}")
 
     db = SessionLocal()
     try:
-        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-        if not ticket:
-            logger.warning(f"Ticket {ticket_id} not found")
-            await send_slack_response(response_url, {"text": f"No ticket found with id {ticket_id}"})
-            return
-
-        ticket.status = 'resolved'
-        ticket.resolved_by = user_id
-        db.commit()
-        logger.info(f"Ticket {ticket_id} resolved by {user_id}")
-        await send_slack_response(response_url, {"text": f"Resolved ticket :{ticket_id}."})
+        message = resolve_ticket(db, user_id, ticket_id)
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to resolve ticket {ticket_id}: {e}")
-        await send_slack_response(response_url, {"text": "Server is not active."})
+        message = "Server is not active."
     finally:
         db.close()
+
+    await send_slack_response(response_url, {"text": message})
+
+
+def list_tickets_for_admin(db: Session, admin_slack_id: str) -> dict:
+    """Build the /listissue reply: active tickets in this admin's category, or every active ticket for a super_admin."""
+    admin = db.query(Admin).filter(Admin.slack_id == admin_slack_id).first()
+    if admin is None:
+        logger.warning(f"Non-admin {admin_slack_id} tried to list tickets")
+        return {"text": "Access denied: You are not an admin."}
+
+    ticket_filters = [Ticket.status == 'active']
+
+    if admin.role != AdminType.super_admin.value:
+        ticket_category = ADMIN_TYPE_TO_TICKET_CATEGORY.get(admin.role)
+        if ticket_category is None:
+            logger.warning(f"Admin {admin_slack_id} has unknown admin type '{admin.role}'")
+            return {"text": f"Your admin type `{admin.role}` is not linked to any ticket category. Ask a super_admin to update it."}
+        ticket_filters.append(Ticket.category == ticket_category)
+
+    all_rows = (
+        db.query(Ticket)
+        .filter(*ticket_filters)
+        .order_by(Ticket.priority.asc(), Ticket.id.desc())
+        .limit(LIST_ISSUE_LIMIT)
+        .all()
+    )
+
+    priority_counts = dict(
+        db.query(Ticket.priority, func.count(Ticket.id))
+        .filter(*ticket_filters)
+        .group_by(Ticket.priority)
+        .all()
+    )
+    total_active = sum(priority_counts.values())
+    logger.info(f"Fetched {len(all_rows)} of {total_active} active tickets for {admin.role} admin {admin_slack_id}")
+
+    if not all_rows:
+        return {
+            "text": "No active tickets",
+            "blocks": build_empty_ticket_blocks()
+        }
+
+    return {
+        "text": f"{total_active} active ticket(s)",
+        "blocks": build_ticket_blocks(all_rows, priority_counts, total_active)
+    }
 
 
 async def background_listissue(user_id: str, response_url: str):
     logger.info(f"List-issues request by {user_id}")
 
-    is_admin = await verify_admin(user_id, check_type="admin")
-    if not is_admin:
-        logger.warning(f"Non-admin {user_id} tried to list tickets")
-        await send_slack_response(response_url, {"text": "Access denied: You are not an admin."})
-        return
-
     db = SessionLocal()
     try:
-        all_rows = (
-            db.query(Ticket)
-            .filter(Ticket.status == 'active')
-            .order_by(Ticket.priority.asc(), Ticket.id.desc())
-            .limit(LIST_ISSUE_LIMIT)
-            .all()
-        )
-
-        # Active ticket count per priority, for the summary line
-        priority_counts = dict(
-            db.query(Ticket.priority, func.count(Ticket.id))
-            .filter(Ticket.status == 'active')
-            .group_by(Ticket.priority)
-            .all()
-        )
-        total_active = sum(priority_counts.values())
-        logger.info(f"Fetched {len(all_rows)} of {total_active} active tickets")
-
-        if not all_rows:
-            payload = {
-                "text": "No active tickets",
-                "blocks": build_empty_ticket_blocks()
-            }
-        else:
-            payload = {
-                "text": f"{total_active} active ticket(s)",
-                "blocks": build_ticket_blocks(all_rows, priority_counts, total_active)
-            }
-
-        await send_slack_response(response_url, payload)
+        payload = list_tickets_for_admin(db, user_id)
     except Exception as e:
         logger.error(f"Failed to fetch active tickets: {e}")
-        await send_slack_response(response_url, {"text": "Error fetching tickets."})
+        payload = {"text": "Error fetching tickets."}
     finally:
         db.close()
 
+    await send_slack_response(response_url, payload)
 
-async def insert_admin_background(user_id: str, slack_id: str, response_url: str):
-    logger.info(f"Add-admin request by {user_id} for '{slack_id}'")
 
-    # Clean Slack mention format (e.g. <@U12345678|username> -> U12345678)
+def find_slack_id_by_name(db: Session, name: str) -> str:
+    """Turn a username like 'jairam' into a Slack ID using the users we already know. Returns the name unchanged if not found."""
+    local_user = db.query(User).filter(User.name == name).first()
+    if local_user:
+        logger.info(f"Resolved username '{name}' to {local_user.slack_id}")
+        return local_user.slack_id
+    return name
+
+
+async def process_add_admin(db: Session, user_id: str, slack_id: str, admin_type: AdminType) -> str:
+    """Handle /add-admin: only a super_admin may add admins. Returns the message to show the requester."""
+    is_super_admin = await verify_admin(db, user_id, 'super_admin')
+    if not is_super_admin:
+        logger.warning(f"Non-super-admin {user_id} tried to add an admin")
+        return 'Access Denied. Only a super_admin can add admins.'
+
     target_slack_id = slack_id
     if target_slack_id.startswith("<@") and target_slack_id.endswith(">"):
         target_slack_id = target_slack_id[2:-1].split('|')[0]
 
-    # Strip leading '@' if the admin typed '@username' literally
     target_slack_id = target_slack_id.lstrip('@')
 
-    # If it is a username instead of a Slack ID (Slack IDs usually start with 'U' and are 9+ chars)
     if target_slack_id and not (target_slack_id.startswith('U') and len(target_slack_id) >= 9):
-        db = SessionLocal()
-        try:
-            local_user = db.query(User).filter(User.name == target_slack_id).first()
-            if local_user:
-                logger.info(f"Resolved username '{target_slack_id}' to {local_user.slack_id}")
-                target_slack_id = local_user.slack_id
-        except Exception as e:
-            logger.error(f"Username lookup failed for '{target_slack_id}': {e}")
-        finally:
-            db.close()
-
-    is_admin = await verify_admin(user_id, 'admin')
-    if not is_admin:
-        logger.warning(f"Non-admin {user_id} tried to add an admin")
-        await send_slack_response(response_url, {'text': 'Access Denied. You are not an admin.'})
-        return
+        target_slack_id = find_slack_id_by_name(db, target_slack_id)
 
     if not target_slack_id:
-        await send_slack_response(response_url, {'text': 'Please specify a user. Example: `/add-admin @username`'})
-        return
+        return 'Please specify a user. Example: `/add-admin @username network`'
 
+    user_data = await fetch_slack_user(target_slack_id)
+    if not user_data.get("ok"):
+        return 'Slack API Error: Could not find user information.'
+
+    slack_user = user_data.get('user', {})
+    user_email = slack_user.get('profile', {}).get('email')
+    user_name = slack_user.get('real_name') or slack_user.get('name', 'IT Support')
+
+    if not user_email:
+        logger.warning(f"No email found for {target_slack_id}")
+        return f'Failed to retrieve email for <@{target_slack_id}>.'
+
+    status = add_admin(db, target_slack_id, user_name, user_email, admin_type.value)
+
+    if status == "success":
+        return f'Added <@{target_slack_id}> as {admin_type.value} admin.'
+    if status == "already_admin":
+        return f'<@{target_slack_id}> is already an admin.'
+    return 'Failed to add admin due to a database error.'
+
+
+async def insert_admin_background(user_id: str, slack_id: str, response_url: str, admin_type: AdminType):
+    logger.info(f"Add-admin request by {user_id} for '{slack_id}' as '{admin_type.value}'")
+
+    db = SessionLocal()
     try:
-        user_data = await fetch_slack_user(target_slack_id)
-        if not user_data.get("ok"):
-            await send_slack_response(response_url, {'text': 'Slack API Error: Could not find user information.'})
-            return
-
-        slack_user = user_data.get('user', {})
-        user_email = slack_user.get('profile', {}).get('email')
-        user_name = slack_user.get('real_name') or slack_user.get('name', 'IT Support')
-
-        if not user_email:
-            logger.warning(f"No email found for {target_slack_id}")
-            await send_slack_response(response_url, {'text': f'Failed to retrieve email for <@{target_slack_id}>.'})
-            return
-
-        status = await add_admin(target_slack_id, user_name, user_email)
-
-        if status == "success":
-            payload = {'text': f'Added <@{target_slack_id}> as admin.'}
-        elif status == "already_admin":
-            payload = {'text': f'<@{target_slack_id}> is already an admin.'}
-        else:
-            payload = {'text': 'Failed to add admin due to a database error.'}
-
-        await send_slack_response(response_url, payload)
+        message = await process_add_admin(db, user_id, slack_id, admin_type)
     except Exception as e:
-        logger.error(f"Failed to insert admin {target_slack_id}: {e}")
-        await send_slack_response(response_url, {'text': 'Internal server error occurred.'})
+        db.rollback()
+        logger.error(f"Failed to add admin '{slack_id}': {e}")
+        message = 'Internal server error occurred.'
+    finally:
+        db.close()
+
+    await send_slack_response(response_url, {'text': message})

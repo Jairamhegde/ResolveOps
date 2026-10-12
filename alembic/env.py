@@ -8,34 +8,22 @@ import os
 import sys
 from pathlib import Path
 
-# Add project root to sys.path so 'backend' can always be imported
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 load_dotenv()
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
 config = context.config
 
 DB_URL = os.getenv('DATABASE_URL')
 if DB_URL:
     config.set_main_option("sqlalchemy.url", DB_URL.replace("%", "%%"))
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
 from backend.database import Base
-import backend.models  # noqa: F401 - ensure models are imported to populate Base.metadata
+import backend.models
 
 target_metadata = Base.metadata
-
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
 
 
 def run_migrations_offline() -> None:
