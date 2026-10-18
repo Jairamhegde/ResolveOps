@@ -15,7 +15,6 @@ def start_with_empty_database():
     db.commit()
     return db
 
-
 def use_test_database_and_fakes(monkeypatch, slack_messages):
     """
     Point crud.py at the SQLite test database instead of Postgres,
@@ -41,7 +40,6 @@ def use_test_database_and_fakes(monkeypatch, slack_messages):
     monkeypatch.setattr(crud, "fetch_slack_user", fake_fetch_slack_user)
     monkeypatch.setattr(crud, "get_ai_data", fake_get_ai_data)
     monkeypatch.setattr(crud, "send_slack_response", fake_send_slack_response)
-
 
 def test_ticket_insertion(monkeypatch):
     db = start_with_empty_database()

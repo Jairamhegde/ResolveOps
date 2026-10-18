@@ -9,10 +9,20 @@ import "./adminpage.css";
 // Later this will come from the logged-in admin's type (network, hardware, software, ...).
 const ADMIN_CATEGORY = "network";
 
+const PRIORITY_OPTIONS = [
+  { value: "all", label: "All priorities" },
+  { value: "1", label: "P1 · Critical" },
+  { value: "2", label: "P2 · High" },
+  { value: "3", label: "P3 · Medium" },
+  { value: "4", label: "P4 · Low" },
+  { value: "5", label: "P5 · Minimal" },
+];
+
 // What a network admin works on: every network ticket, most urgent first.
 function AdminPage({ token, onUnauthorized }) {
   const [result, setResult] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [selectedPriority, setSelectedPriority] = useState("all");
 
   useEffect(() => {
     fetchCategoryTickets(token, ADMIN_CATEGORY)
@@ -26,9 +36,32 @@ function AdminPage({ token, onUnauthorized }) {
       });
   }, [token]);
 
+  // The tickets that match the chosen priority, or all of them.
+  let shownTickets = [];
+  if (result !== null) {
+    shownTickets = result.tickets.filter(
+      (ticket) => selectedPriority === "all" || ticket.priority === Number(selectedPriority)
+    );
+  }
+
   return (
     <main className="dashboard">
-      <PageHeader title="Network admin" subtitle="Tickets the AI classified as network issues, most urgent first" />
+      <PageHeader title="Network admin" subtitle="Tickets the AI classified as network issues, most urgent first">
+        <label className="priority-filter">
+          Priority
+          <select
+            className="priority-filter-select"
+            value={selectedPriority}
+            onChange={(event) => setSelectedPriority(event.target.value)}
+          >
+            {PRIORITY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </PageHeader>
 
       {errorMessage && <p className="dashboard-message dashboard-error">{errorMessage}</p>}
 
@@ -44,8 +77,12 @@ function AdminPage({ token, onUnauthorized }) {
 
           {result.tickets.length === 0 && <p className="dashboard-message">No network tickets yet.</p>}
 
+          {result.tickets.length > 0 && shownTickets.length === 0 && (
+            <p className="dashboard-message">No tickets with this priority.</p>
+          )}
+
           <section className="admin-ticket-list">
-            {result.tickets.map((ticket) => (
+            {shownTickets.map((ticket) => (
               <TicketCard key={ticket.id} ticket={ticket} />
             ))}
           </section>
