@@ -1,4 +1,3 @@
-from pyparsing import DebugSuccessAction
 import os
 from datetime import datetime, timedelta
 
@@ -11,18 +10,21 @@ from backend.database import SessionLocal
 from backend.models import User, Ticket, Admin, utc_now_naive
 from backend.schemas import InsertTicket, CreateAdmin, CreateUser, AdminType, Category
 from backend.ai import get_ai_data
-from backend.auth import verify_admin
+from backend.auth import is_admin_in_database
 from backend.slack_blocks import (
     build_ticket_blocks,
     build_empty_ticket_blocks,
     build_suggested_fix_blocks,
     build_fix_feedback_result_blocks,
-    build_ticket_received_blocks
+    build_ticket_received_blocks,
+    build_resolution_dm_blocks,
+    build_command_reply
 )
 
 
 DAILY_TICKET_LIMIT = 5
 SLACK_USER_INFO_URL = "https://slack.com/api/users.info"
+SLACK_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
 
 LIST_ISSUE_LIMIT = 12
 
@@ -41,6 +43,22 @@ async def send_slack_response(response_url: str, payload: dict):
             logger.info(f"Slack response sent (status {response.status_code})")
     except Exception as e:
         logger.error(f"Failed to send Slack response: {e}")
+
+
+async def send_slack_dm(slack_id: str, text: str, blocks: list):
+    """Send a direct message from the bot to one Slack user."""
+    token = os.getenv("BOT_AUTH_TOKEN")
+    headers = {"Authorization": f"Bearer {token}"}
+    message = {"channel": slack_id, "text": text, "blocks": blocks}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(SLACK_POST_MESSAGE_URL, json=message, headers=headers)
+            result = response.json()
+        if not result.get("ok"):
+            logger.error(f"Slack DM to {slack_id} failed: {result.get('error')}")
+    except Exception as e:
+        logger.error(f"Failed to send Slack DM to {slack_id}: {e}")
 
 
 async def fetch_slack_user(slack_id: str) -> dict:
@@ -219,7 +237,7 @@ async def insert_ticket_background(user_id: str, issue_text: str, user_name: str
         
     finally:
         db.close()
-    await send_slack_response(response_url, payload)
+    await send_slack_response(response_url, build_command_reply(f"/ticket {issue_text or ''}", payload))
     
     return succeded
 
@@ -277,27 +295,32 @@ def can_admin_handle_ticket(admin: Admin, ticket: Ticket) -> bool:
     return admin_category is not None and admin_category == ticket.category
 
 
-def resolve_ticket(db: Session, admin_slack_id: str, ticket_id: int) -> str:
-    """Resolve a ticket if this admin is allowed to. Returns the message to show the admin."""
+def resolve_ticket(db: Session, admin_slack_id: str, ticket_id: int):
+    """
+    An admin marks a ticket as fixed. It waits for the user to confirm, it is not closed yet.
+    Returns the message to show the admin, and the ticket when the user must be asked (otherwise None).
+    """
     admin = db.query(Admin).filter(Admin.slack_id == admin_slack_id).first()
     if admin is None:
         logger.warning(f"Non-admin {admin_slack_id} tried to resolve ticket {ticket_id}")
-        return "Access denied: Only admins can resolve tickets."
+        return "Access denied: Only admins can resolve tickets.", None
 
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if ticket is None:
         logger.warning(f"Ticket {ticket_id} not found")
-        return f"No ticket found with id {ticket_id}"
+        return f"No ticket found with id {ticket_id}", None
 
     if not can_admin_handle_ticket(admin, ticket):
         logger.warning(f"{admin.role} admin {admin_slack_id} tried to resolve {ticket.category} ticket {ticket_id}")
-        return f"Access denied: Ticket {ticket_id} is a `{ticket.category}` ticket and you are a `{admin.role}` admin."
+        return f"Access denied: Ticket {ticket_id} is a `{ticket.category}` ticket and you are a `{admin.role}` admin.", None
 
-    ticket.status = 'resolved'
-    ticket.resolved_by = admin_slack_id
+    if ticket.status == 'resolved':
+        return f"Ticket {ticket_id} is already resolved.", None
+
+    ticket.status = 'awaiting_user'
     db.commit()
-    logger.info(f"Ticket {ticket_id} resolved by {admin_slack_id}")
-    return f"Resolved ticket :{ticket_id}."
+    logger.info(f"Ticket {ticket_id} fixed by {admin_slack_id}, waiting for {ticket.slack_id} to confirm")
+    return f"Ticket {ticket_id} marked as fixed. Waiting for <@{ticket.slack_id}> to confirm.", ticket
 
 
 async def background_process_resolve(user_id: str, ticket_id: int, response_url: str):
@@ -305,7 +328,13 @@ async def background_process_resolve(user_id: str, ticket_id: int, response_url:
 
     db = SessionLocal()
     try:
-        message = resolve_ticket(db, user_id, ticket_id)
+        message, ticket = resolve_ticket(db, user_id, ticket_id)
+        if ticket is not None:
+            await send_slack_dm(
+                ticket.slack_id,
+                f"Your ticket #{ticket_id} has been fixed. Is your issue resolved?",
+                build_resolution_dm_blocks(ticket_id, ticket.issue_text, user_id)
+            )
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to resolve ticket {ticket_id}: {e}")
@@ -313,7 +342,48 @@ async def background_process_resolve(user_id: str, ticket_id: int, response_url:
     finally:
         db.close()
 
-    await send_slack_response(response_url, {"text": message})
+    await send_slack_response(response_url, build_command_reply(f"/resolve {ticket_id}", {"text": message}))
+
+
+def answer_admin_fix(db: Session, user_id: str, ticket_id: int, admin_id: str, fixed: bool) -> str:
+    """The user answers the admin's fix: Resolved closes the ticket, Not resolved puts it back in the admin queue."""
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if ticket is None:
+        return f"No ticket found with id {ticket_id}"
+
+    if ticket.slack_id != user_id:
+        logger.warning(f"{user_id} tried to answer the fix for ticket {ticket_id} owned by {ticket.slack_id}")
+        return "Only the person who raised this ticket can respond."
+
+    if ticket.status != 'awaiting_user':
+        return f"Ticket {ticket_id} was already answered."
+
+    if fixed:
+        ticket.status = 'resolved'
+        ticket.resolved_by = admin_id
+        message = f"Glad it works! Ticket #{ticket_id} has been closed."
+    else:
+        ticket.status = 'active'
+        ticket.escalated_at = utc_now_naive()
+        message = f"Ticket #{ticket_id} is still open. An admin will look at it again."
+
+    db.commit()
+    logger.info(f"User {user_id} answered the fix for ticket {ticket_id}: fixed={fixed}")
+    return message
+
+
+async def background_answer_admin_fix(user_id: str, ticket_id: int, admin_id: str, fixed: bool, response_url: str):
+    db = SessionLocal()
+    try:
+        message = answer_admin_fix(db, user_id, ticket_id, admin_id, fixed)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to record the answer for ticket {ticket_id}: {e}")
+        message = "Server is not active."
+    finally:
+        db.close()
+
+    await send_slack_response(response_url, {"replace_original": True, "text": message})
 
 
 def list_tickets_for_admin(db: Session, admin_slack_id: str) -> dict:
@@ -373,7 +443,7 @@ async def background_listissue(user_id: str, response_url: str):
     finally:
         db.close()
 
-    await send_slack_response(response_url, payload)
+    await send_slack_response(response_url, build_command_reply("/listissue", payload))
 
 
 def find_slack_id_by_name(db: Session, name: str) -> str:
@@ -387,7 +457,7 @@ def find_slack_id_by_name(db: Session, name: str) -> str:
 
 async def process_add_admin(db: Session, user_id: str, slack_id: str, admin_type: AdminType) -> str:
     """Handle /add-admin: only a super_admin may add admins. Returns the message to show the requester."""
-    is_super_admin = await verify_admin(db, user_id, 'super_admin')
+    is_super_admin = is_admin_in_database(db, user_id, 'super_admin')
     if not is_super_admin:
         logger.warning(f"Non-super-admin {user_id} tried to add an admin")
         return 'Access Denied. Only a super_admin can add admins.'
@@ -438,4 +508,4 @@ async def insert_admin_background(user_id: str, slack_id: str, response_url: str
     finally:
         db.close()
 
-    await send_slack_response(response_url, {'text': message})
+    await send_slack_response(response_url, build_command_reply(f"/add-admin {slack_id} {admin_type.value}", {'text': message}))

@@ -58,6 +58,10 @@ flowchart LR
 | `/resolve <id>` | Admins | Resolve a ticket by ID. |
 | `/add-admin @user <admin_type>` | `super_admin` | Make a user an admin of the given type. |
 
+<p align="center">
+  <img src="images/slack-commands.png" alt="ResolveOps slash commands in the Slack help-desk channel" width="75%">
+</p>
+
 Slack sends slash commands as form-encoded fields (`user_id`, `user_name`, `text`, `response_url`). Button clicks arrive at `/webhook/interactions` as a form field `payload` that holds the JSON. Example payloads for Slack interactions and GitHub events are in [`payloadformats.md`](payloadformats.md).
 
 ## Dashboard
@@ -71,6 +75,12 @@ Admins sign in with an email and password. The backend checks the bcrypt hash an
 | **As super admin** | The **AI deflection rate** (share of tickets the AI fix solved with no admin), total, open, AI-solved and needs-review counts, bar charts of tickets by category and by priority, the 10 most recent tickets, and the tickets caught by the AI guard (spam, prompt injection, unclear). Refreshes every 10 seconds. |
 | **As admin** | A category admin's queue (network in the demo): total, open and needs-review counts, and every ticket in that category, most urgent first. |
 | **As user** | Pick an employee to see the tickets they raised in Slack, their status, and the AI's suggested fix. |
+
+<p align="center">
+  <img src="images/dashboard-super-admin.png" alt="Super admin view: AI deflection rate, ticket counts, and charts by category and priority" width="49%">
+  <img src="images/dashboard-user.png" alt="User view: an employee's tickets with status, priority, flag and the AI suggested fix" width="49%">
+</p>
+<p align="center"><em>Left: super admin view. Right: an employee's tickets.</em></p>
 
 It supports light and dark mode and works at phone width. Each UI piece (`Navbar`, `StatCard`, `BarChartCard`, `TicketCard`, …) is a reusable component with its own CSS file.
 
@@ -124,15 +134,11 @@ pytest -m ai        # only the Gemini test (uses real quota, needs GEMINI_API)
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    S[Slack command / button] --> V{HMAC valid?} -->|ack < 3s| BG[Background task]
-    BG --> AI[Gemini triage] --> DB[(PostgreSQL)]
-    BG -->|response_url| S
-    GH[GitHub webhook] --> V2{HMAC valid?} --> R[Event router] --> CH[Repo Slack channel]
-    SCH[APScheduler / 15 min] --> DB
-    UI[React dashboard] -->|JWT| API[Dashboard API] --> DB
-```
+<p align="center">
+  <img src="images/architecture.png" alt="ResolveOps architecture: Slack requests pass an HMAC check and a fast webhook route, then a background task triages with Gemini, routes the ticket and saves it to PostgreSQL" width="100%">
+</p>
+
+Every Slack request passes the HMAC check and is acknowledged within 3 seconds. `/ticket` is triaged by Gemini and either gets a self-service fix or goes to the admin queue for its category; admin commands check the admin's role first. The SLA scheduler escalates overdue tickets every 15 minutes. Not shown: GitHub webhooks (HMAC check, then a card in the repo's Slack channel) and the dashboard (JWT login, then read-only queries).
 
 ## Project Structure
 

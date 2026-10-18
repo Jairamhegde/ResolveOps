@@ -10,6 +10,8 @@ SUGGESTED_FIX_CHARS = 2800
 RESOLVE_ACTION_ID = "resolve_ticket"
 FIX_RESOLVED_ACTION_ID = "ai_fix_resolved"
 FIX_NOT_RESOLVED_ACTION_ID = "ai_fix_not_resolved"
+USER_CONFIRMS_FIX_ACTION_ID = "user_confirms_fix"
+USER_REJECTS_FIX_ACTION_ID = "user_rejects_fix"
 
 PRIORITY_META = {
     1: ("🔴", "Critical"),
@@ -177,6 +179,25 @@ def build_empty_ticket_blocks(notice: str = None) -> list:
     return blocks
 
 
+def build_command_reply(command: str, payload: dict) -> dict:
+    """Show the user's own command above the reply, so each request and its answer read as one group."""
+    request_line = {
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": f"You ran `{escape_mrkdwn(truncate(command.strip(), CARD_TITLE_CHARS))}`"}]
+    }
+
+    blocks = payload.get("blocks")
+    if not blocks:
+        blocks = [
+            {"type": "section", "text": {"type": "mrkdwn", "text": payload.get("text", "")}},
+            section_divider()
+        ]
+
+    reply = dict(payload)
+    reply["blocks"] = [request_line] + blocks
+    return reply
+
+
 def build_notice_block(notice: str) -> dict:
     """A one-line status message shown under the list header, e.g. after a ticket is resolved."""
     return {
@@ -186,22 +207,40 @@ def build_notice_block(notice: str) -> dict:
 
 
 def build_resolution_dm_blocks(ticket_id: int, issue_text: str, admin_id: str) -> list:
-    """DM sent to the reporter when their ticket is resolved."""
+    """DM sent to the reporter when an admin fixes their ticket. The ticket only closes when they click Resolved."""
     issue = escape_mrkdwn(truncate((issue_text or "No description").strip(), ISSUE_PREVIEW_CHARS))
     quoted_issue = "> " + issue.replace("\n", "\n> ")
+    button_value = f"{ticket_id}:{admin_id}"
 
     return [
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Your ticket `#{ticket_id}` has been resolved*\n{quoted_issue}"
+                "text": f"*<@{admin_id}> has fixed your ticket `#{ticket_id}`*\n{quoted_issue}"
             }
         },
         {
             "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "Is your issue resolved?"}]
+        },
+        {
+            "type": "actions",
             "elements": [
-                {"type": "mrkdwn", "text": f"Resolved by <@{admin_id}>   ·   Still having trouble? File a new ticket with `/ticket`"}
+                {
+                    "type": "button",
+                    "action_id": USER_CONFIRMS_FIX_ACTION_ID,
+                    "value": button_value,
+                    "style": "primary",
+                    "text": {"type": "plain_text", "text": "Resolved", "emoji": True}
+                },
+                {
+                    "type": "button",
+                    "action_id": USER_REJECTS_FIX_ACTION_ID,
+                    "value": button_value,
+                    "style": "danger",
+                    "text": {"type": "plain_text", "text": "Not resolved", "emoji": True}
+                }
             ]
         },
         section_divider()
@@ -304,79 +343,100 @@ def github_date(raw_date: str) -> str:
     return slack_date(parsed_date)
 
 
-def build_github_card(title: str, subtitle: str, body: str, footer: str) -> list:
-    """A GitHub notification: a card with the details and a context line with the link underneath."""
-    return [
+GITHUB_MESSAGE_CHARS = 500
+
+
+def build_github_message(title: str, fields: list, message_label: str, message: str, url: str) -> list:
+    """A short GitHub notification: a header, the key details in two columns, an optional message and a link."""
+    blocks = [
         {
-            "type": "card",
-            "title": {"type": "mrkdwn", "text": truncate(title, CARD_TITLE_CHARS), "verbatim": False},
-            "subtitle": {"type": "mrkdwn", "text": truncate(subtitle, CARD_TITLE_CHARS), "verbatim": False},
-            "body": {"type": "mrkdwn", "text": truncate(body, CARD_BODY_CHARS), "verbatim": False}
+            "type": "header",
+            "text": {"type": "plain_text", "text": truncate(title, CARD_TITLE_CHARS)}
         },
         {
-            "type": "context",
-            "elements": [{"type": "mrkdwn", "text": footer}]
-        },
-        section_divider()
+            "type": "section",
+            "fields": [{"type": "mrkdwn", "text": f"*{label}*\n{value}"} for label, value in fields]
+        }
     ]
+
+    if message:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*{message_label}*\n{truncate(message, GITHUB_MESSAGE_CHARS)}"}
+        })
+
+    if url:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"<{url}|View on GitHub>"}]
+        })
+
+    blocks.append(section_divider())
+    return blocks
+
+
+def github_time(detail: dict) -> str:
+    """The event time in each viewer's Slack timezone, or 'Unknown'."""
+    if not detail.get("date"):
+        return "Unknown"
+    return github_date(detail["date"])
 
 
 def build_gitpushdetail_block(detail: dict) -> list:
-    repo = escape_mrkdwn(detail.get("repo") or "unknown repo")
-    branch = escape_mrkdwn(detail.get("branch") or "unknown branch")
-    pusher = escape_mrkdwn(detail.get("name") or "Unknown")
-    changed_files = len(detail.get("changed_files") or [])
-    commit_message = escape_mrkdwn((detail.get("message") or "No commit message").strip())
+    repo = escape_mrkdwn(detail.get("repo") or "Unknown")
+    commit_message = escape_mrkdwn((detail.get("message") or "No commit message").strip().split("\n")[0])
 
-    footer = "Event: push"
-    if detail.get("date"):
-        footer += f" · {github_date(detail['date'])}"
-    if detail.get("url"):
-        footer += f" · <{detail['url']}|View commit on GitHub>"
-
-    return build_github_card(
-        title=f"New push to {repo} ({branch})",
-        subtitle=f"Pushed by {pusher} · {changed_files} file(s) changed",
-        body=commit_message,
-        footer=footer
+    return build_github_message(
+        title=f"Push to {detail.get('repo') or 'repository'}",
+        fields=[
+            ("Repository", repo),
+            ("Branch", escape_mrkdwn(detail.get("branch") or "Unknown")),
+            ("Author", escape_mrkdwn(detail.get("name") or "Unknown")),
+            ("Time", github_time(detail)),
+        ],
+        message_label="Commit message",
+        message=commit_message,
+        url=detail.get("url")
     )
 
 
 def build_gitprdetail_block(detail: dict) -> list:
-    number = detail.get("number")
-    pr_title = escape_mrkdwn(detail.get("title") or "Untitled pull request")
-    repo = escape_mrkdwn(detail.get("repo") or "unknown repo")
-    author = escape_mrkdwn(detail.get("user") or "Unknown")
-    status = "Merged" if detail.get("merged") else (detail.get("state") or "unknown").capitalize()
-    description = escape_mrkdwn((detail.get("body") or "No description provided").strip())
+    if detail.get("merged"):
+        status = "Merged"
+    else:
+        status = (detail.get("action") or detail.get("state") or "Unknown").replace("_", " ").capitalize()
 
-    footer = f"Event: pull request {detail.get('action')}"
-    if detail.get("url"):
-        footer += f" · <{detail['url']}|View pull request on GitHub>"
-
-    return build_github_card(
-        title=f"PR #{number}: {pr_title}",
-        subtitle=f"{repo} · Opened by {author} · Status: {status}",
-        body=description,
-        footer=footer
+    return build_github_message(
+        title=f"Pull request #{detail.get('number')}: {detail.get('title') or 'Untitled'}",
+        fields=[
+            ("Repository", escape_mrkdwn(detail.get("repo") or "Unknown")),
+            ("Status", status),
+            ("Branch", escape_mrkdwn(f"{detail.get('head_branch') or '?'} into {detail.get('base_branch') or '?'}")),
+            ("Author", escape_mrkdwn(detail.get("user") or "Unknown")),
+            ("Time", github_time(detail)),
+        ],
+        message_label="",
+        message=None,
+        url=detail.get("url")
     )
 
 
 def build_workflow_detail_block(detail: dict) -> list:
-    name = escape_mrkdwn(detail.get("name") or "Unnamed workflow")
-    repo = escape_mrkdwn(detail.get("repo") or "unknown repo")
-    branch = escape_mrkdwn(detail.get("branch") or "unknown branch")
-    actor = escape_mrkdwn(detail.get("actor") or "Unknown")
-    status = detail.get("status") or "unknown"
-    conclusion = detail.get("conclusion") or "pending"
+    if detail.get("status") == "completed":
+        status = (detail.get("conclusion") or "Unknown").replace("_", " ").capitalize()
+    else:
+        status = (detail.get("status") or "Unknown").replace("_", " ").capitalize()
 
-    footer = f"Event: {detail.get('event')}"
-    if detail.get("url"):
-        footer += f" · <{detail['url']}|View workflow run on GitHub>"
-
-    return build_github_card(
-        title=f"Workflow: {name}",
-        subtitle=f"{repo} · Branch: {branch} · Triggered by {actor}",
-        body=f"Status: {status} · Conclusion: {conclusion}",
-        footer=footer
+    return build_github_message(
+        title=f"Workflow {detail.get('name') or 'run'}: {status}",
+        fields=[
+            ("Repository", escape_mrkdwn(detail.get("repo") or "Unknown")),
+            ("Status", status),
+            ("Branch", escape_mrkdwn(detail.get("branch") or "Unknown")),
+            ("Triggered by", escape_mrkdwn(detail.get("actor") or "Unknown")),
+            ("Time", github_time(detail)),
+        ],
+        message_label="Commit message",
+        message=escape_mrkdwn((detail.get("commit_message") or "").strip().split("\n")[0]),
+        url=detail.get("url")
     )

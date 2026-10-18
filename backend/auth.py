@@ -2,7 +2,6 @@ import os
 import time
 import hmac
 import hashlib
-import httpx
 from fastapi import Request, HTTPException
 from sqlalchemy.orm import Session
 from backend.models import User, Admin
@@ -11,42 +10,22 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def is_admin_in_database(db: Session, user_id: str, user_email: str, check_type: str = "admin") -> bool:
-    """Check the database: is this user an admin (check_type "admin"), a super_admin, or any registered user?"""
+def is_admin_in_database(db: Session, user_id: str, check_type: str = "admin") -> bool:
+    """
+    Check the database: is this Slack user an admin (check_type "admin"), a super_admin, or any registered user?
+    The user_id is safe to trust because the request already passed the Slack signature check.
+    """
     if check_type == "admin":
-        found = db.query(Admin).filter(
-            Admin.slack_id == user_id,
-            Admin.email == user_email
-        ).first()
+        found = db.query(Admin).filter(Admin.slack_id == user_id).first()
     elif check_type == "super_admin":
         found = db.query(Admin).filter(
             Admin.slack_id == user_id,
-            Admin.email == user_email,
             Admin.role == AdminType.super_admin.value
         ).first()
     else:
-        found = db.query(User).filter(
-            User.slack_id == user_id,
-            User.email == user_email
-        ).first()
+        found = db.query(User).filter(User.slack_id == user_id).first()
     return found is not None
 
-
-async def verify_admin(db: Session, user_id: str, check_type: str = "admin") -> bool:
-    """Look up the user's email on Slack, then check the database with is_admin_in_database."""
-    token = os.getenv("BOT_AUTH_TOKEN")
-    headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://slack.com/api/users.info?user={user_id}"
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers)
-        request_email = response.json()
-
-    if not request_email.get("ok"):
-        return False
-
-    user_email = request_email.get('user', {}).get('profile', {}).get('email')
-    return is_admin_in_database(db, user_id, user_email, check_type)
 
 from logger import logger
 

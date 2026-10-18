@@ -1,7 +1,7 @@
 import asyncio
 import backend.crud as crud
 from backend.auth import is_admin_in_database
-from backend.crud import resolve_ticket, list_tickets_for_admin, add_admin, find_slack_id_by_name, create_ticket
+from backend.crud import resolve_ticket, answer_admin_fix, list_tickets_for_admin, add_admin, find_slack_id_by_name, create_ticket
 from backend.models import User, Admin, Ticket
 from testing.test_database import get_test_db
 
@@ -21,8 +21,8 @@ def make_admin(db, slack_id, role):
     db.commit()
 
 
-def make_ticket(db, category):
-    ticket = Ticket(issue_text=f"A {category} problem", category=category, priority=3, status="active")
+def make_ticket(db, category, status="active"):
+    ticket = Ticket(slack_id="UREPORTER", issue_text=f"A {category} problem", category=category, priority=3, status=status)
     db.add(ticket)
     db.commit()
     return ticket.id
@@ -44,23 +44,25 @@ def test_non_admin_cannot_resolve():
     db = start_with_empty_database()
     ticket_id = make_ticket(db, "network")
 
-    message = resolve_ticket(db, "UNOBODY", ticket_id)
+    message, ticket_to_confirm = resolve_ticket(db, "UNOBODY", ticket_id)
 
     assert message == "Access denied: Only admins can resolve tickets."
+    assert ticket_to_confirm is None
     db.close()
 
 
-def test_network_admin_resolves_network_ticket():
+def test_network_admin_fix_waits_for_the_user():
     db = start_with_empty_database()
     make_admin(db, "UNETWORK", "network")
     ticket_id = make_ticket(db, "network")
 
-    message = resolve_ticket(db, "UNETWORK", ticket_id)
+    message, ticket_to_confirm = resolve_ticket(db, "UNETWORK", ticket_id)
 
-    assert message == f"Resolved ticket :{ticket_id}."
+    assert message == f"Ticket {ticket_id} marked as fixed. Waiting for <@UREPORTER> to confirm."
+    assert ticket_to_confirm.id == ticket_id
     ticket = db.get(Ticket, ticket_id)
-    assert ticket.status == "resolved"
-    assert ticket.resolved_by == "UNETWORK"
+    assert ticket.status == "awaiting_user"
+    assert ticket.resolved_by is None
     db.close()
 
 
@@ -69,9 +71,10 @@ def test_network_admin_cannot_resolve_hardware_ticket():
     make_admin(db, "UNETWORK", "network")
     ticket_id = make_ticket(db, "hardware")
 
-    message = resolve_ticket(db, "UNETWORK", ticket_id)
+    message, ticket_to_confirm = resolve_ticket(db, "UNETWORK", ticket_id)
 
     assert message.startswith("Access denied")
+    assert ticket_to_confirm is None
     assert db.get(Ticket, ticket_id).status == "active"
     db.close()
 
@@ -81,9 +84,10 @@ def test_super_admin_resolves_any_ticket():
     make_admin(db, "USUPER", "super_admin")
     ticket_id = make_ticket(db, "hardware")
 
-    message = resolve_ticket(db, "USUPER", ticket_id)
+    message, ticket_to_confirm = resolve_ticket(db, "USUPER", ticket_id)
 
-    assert message == f"Resolved ticket :{ticket_id}."
+    assert ticket_to_confirm.id == ticket_id
+    assert db.get(Ticket, ticket_id).status == "awaiting_user"
     db.close()
 
 
@@ -91,9 +95,59 @@ def test_resolve_missing_ticket():
     db = start_with_empty_database()
     make_admin(db, "UNETWORK", "network")
 
-    message = resolve_ticket(db, "UNETWORK", 999)
+    message, ticket_to_confirm = resolve_ticket(db, "UNETWORK", 999)
 
     assert message == "No ticket found with id 999"
+    assert ticket_to_confirm is None
+    db.close()
+
+
+def test_user_clicks_resolved_closes_the_ticket():
+    db = start_with_empty_database()
+    ticket_id = make_ticket(db, "network", status="awaiting_user")
+
+    message = answer_admin_fix(db, "UREPORTER", ticket_id, "UNETWORK", fixed=True)
+
+    assert message == f"Glad it works! Ticket #{ticket_id} has been closed."
+    ticket = db.get(Ticket, ticket_id)
+    assert ticket.status == "resolved"
+    assert ticket.resolved_by == "UNETWORK"
+    db.close()
+
+
+def test_user_clicks_not_resolved_keeps_the_ticket_open():
+    db = start_with_empty_database()
+    ticket_id = make_ticket(db, "network", status="awaiting_user")
+
+    message = answer_admin_fix(db, "UREPORTER", ticket_id, "UNETWORK", fixed=False)
+
+    assert message == f"Ticket #{ticket_id} is still open. An admin will look at it again."
+    ticket = db.get(Ticket, ticket_id)
+    assert ticket.status == "active"
+    assert ticket.resolved_by is None
+    db.close()
+
+
+def test_only_the_reporter_can_answer_the_fix():
+    db = start_with_empty_database()
+    ticket_id = make_ticket(db, "network", status="awaiting_user")
+
+    message = answer_admin_fix(db, "USOMEONEELSE", ticket_id, "UNETWORK", fixed=True)
+
+    assert message == "Only the person who raised this ticket can respond."
+    assert db.get(Ticket, ticket_id).status == "awaiting_user"
+    db.close()
+
+
+def test_fix_can_only_be_answered_once():
+    db = start_with_empty_database()
+    ticket_id = make_ticket(db, "network", status="awaiting_user")
+    answer_admin_fix(db, "UREPORTER", ticket_id, "UNETWORK", fixed=True)
+
+    message = answer_admin_fix(db, "UREPORTER", ticket_id, "UNETWORK", fixed=False)
+
+    assert message == f"Ticket {ticket_id} was already answered."
+    assert db.get(Ticket, ticket_id).status == "resolved"
     db.close()
 
 
@@ -156,10 +210,10 @@ def test_only_super_admin_passes_super_admin_check():
     make_admin(db, "USUPER", "super_admin")
     make_admin(db, "UNETWORK", "network")
 
-    assert is_admin_in_database(db, "USUPER", "USUPER@example.com", "super_admin") is True
-    assert is_admin_in_database(db, "UNETWORK", "UNETWORK@example.com", "super_admin") is False
-    assert is_admin_in_database(db, "UNETWORK", "UNETWORK@example.com", "admin") is True
-    assert is_admin_in_database(db, "UNOBODY", "nobody@example.com", "admin") is False
+    assert is_admin_in_database(db, "USUPER", "super_admin") is True
+    assert is_admin_in_database(db, "UNETWORK", "super_admin") is False
+    assert is_admin_in_database(db, "UNETWORK", "admin") is True
+    assert is_admin_in_database(db, "UNOBODY", "admin") is False
     db.close()
 
 
