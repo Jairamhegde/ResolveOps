@@ -11,6 +11,8 @@ jobs:
 
     env:
       DATABASE_URL: sqlite:///testing/test.db
+      # Only signs tokens inside the tests; the real secret lives in the host's environment.
+      JWT_SECRET: test-only-secret
 
     steps:
       - uses: actions/checkout@v4
