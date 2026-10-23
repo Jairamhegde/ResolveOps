@@ -9,7 +9,6 @@ class Category(str, Enum):
     account_access = "account_access"
     other = "other"
 
-
 class Flag(str, Enum):
     """Values stored in ticket.flag. Anything other than `none` needs an admin to review it."""
     none = "none"
@@ -17,7 +16,6 @@ class Flag(str, Enum):
     spam = "spam"
     injection = "injection"
     ai_failed = "ai_failed"
-
 
 class InsertTicket(BaseModel):
     slack_id: str
@@ -39,13 +37,11 @@ class CreateUser(BaseModel):
     name: str
     email: str
 
-
 class AiResponseModel(BaseModel):
     category: Category
     priority: int
     flag: Flag
     suggested_fix: str
-
 
 class AdminType(str, Enum):
     """Values stored in admin.role, always lowercase. Only a super_admin can add new admins."""

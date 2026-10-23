@@ -11,10 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def is_admin_in_database(db: Session, user_id: str, check_type: str = "admin") -> bool:
-    """
-    Check the database: is this Slack user an admin (check_type "admin"), a super_admin, or any registered user?
-    The user_id is safe to trust because the request already passed the Slack signature check.
-    """
+    
     if check_type == "admin":
         found = db.query(Admin).filter(Admin.slack_id == user_id).first()
     elif check_type == "super_admin":

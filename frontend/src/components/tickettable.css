@@ -1,0 +1,94 @@
+.table-scroll {
+  overflow-x: auto;
+}
+
+.ticket-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ticket-table th {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ticket-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+}
+
+.ticket-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.ticket-row {
+  cursor: pointer;
+}
+
+.ticket-row:hover {
+  background-color: var(--hover);
+}
+
+.ticket-row-selected,
+.ticket-row-selected:hover {
+  background-color: color-mix(in srgb, var(--info) 9%, var(--paper));
+}
+
+.ticket-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.cell-key {
+  color: var(--ink-soft);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cell-summary {
+  min-width: 220px;
+  max-width: 420px;
+}
+
+.summary-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.summary-missing {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.cell-summary .lozenge {
+  margin-top: 4px;
+}
+
+.cell-muted {
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.cell-time {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.table-empty {
+  padding: 32px 16px;
+  color: var(--muted);
+  text-align: center;
+}

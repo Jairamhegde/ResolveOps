@@ -1,0 +1,60 @@
+.ticket-search {
+  width: min(280px, 100%);
+}
+
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 -20px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--rule);
+  overflow-x: auto;
+}
+
+.view-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-soft);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.view-tab:hover {
+  color: var(--ink);
+}
+
+.view-tab-active {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+
+.view-tab-count {
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background-color: var(--hover);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .view-tabs {
+    margin: 0 -14px;
+    padding: 0 14px;
+  }
+
+  .section-flush .section-header {
+    flex-direction: column;
+  }
+
+  .ticket-search {
+    width: 100%;
+  }
+}

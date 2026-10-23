@@ -23,6 +23,7 @@ class User(Base):
     slack_id = Column(String(50), primary_key=True)
     name = Column(String(100), nullable=False)
     email = Column(Text, nullable=False, unique=True)
+    password_hash = Column(String(255))
 
 
 class Ticket(Base):

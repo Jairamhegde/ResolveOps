@@ -1,160 +1,131 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import Admin
-from backend.schemas import Category
-from backendapi.routes.auth_routes import get_current_admin
+from backend.models import Admin, User
+from backend.schemas import AdminType, Category
+from backendapi.routes.auth_routes import get_current_admin, get_current_employee
 from backendapi.queries.ticket_queries import (
-    count_total_tickets,
-    count_active_tickets,
-    count_inactive_tickets,
-    count_solved_tickets,
-    count_unsolved_tickets,
-    count_tickets_solved_by_ai,
-    get_tickets_solved_by_ai,
-    get_todays_tickets,
-    count_needs_review,
-    count_tickets_by_category,
-    count_tickets_by_priority,
-    get_recent_tickets,
-    get_flagged_tickets,
-    get_users_with_tickets,
-    get_tickets_of_user,
-    get_tickets_in_category,
-    RESOLVED_STATUS,
+    count_by_category,
+    count_by_day,
+    count_by_priority,
+    list_admins,
+    list_tickets,
+    list_users_with_tickets,
+    ticket_metrics,
+    ticket_scope,
 )
 
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
+# The ticket category each admin type looks after. A super admin sees every category.
+ADMIN_CATEGORY = {
+    AdminType.network.value: Category.network.value,
+    AdminType.hardware.value: Category.hardware.value,
+    AdminType.software.value: Category.software.value,
+    AdminType.iam.value: Category.account_access.value,
+    AdminType.other.value: Category.other.value,
+}
 
-@router.get("/ticket-counts")
-def get_ticket_counts(db: Session = Depends(get_db)):
-    """Total, active and inactive ticket counts."""
-    return {
-        "total": count_total_tickets(db),
-        "active": count_active_tickets(db),
-        "inactive": count_inactive_tickets(db),
-    }
+
+def is_super_admin(admin: Admin) -> bool:
+    return admin.role == AdminType.super_admin.value
+
+
+def category_for(admin: Admin, requested: Category | None) -> str | None:
+    """The category this admin may see: their own, or for a super admin the one they asked for (None = all)."""
+    if is_super_admin(admin):
+        return requested.value if requested else None
+
+    category = ADMIN_CATEGORY.get(admin.role)
+    if category is None:
+        raise HTTPException(status_code=403, detail=f"Admin type '{admin.role}' is not linked to a ticket category")
+    return category
+
 
 @router.get("/summary")
-def get_summary(db: Session = Depends(get_db)):
-    """Ticket totals for the dashboard cards."""
-    return {
-        "total": count_total_tickets(db),
-        "solved": count_solved_tickets(db),
-        "unsolved": count_unsolved_tickets(db),
-        "solved_by_ai": count_tickets_solved_by_ai(db),
-    }
-
-@router.get("/ai-solved-tickets")
-def get_ai_solved_tickets(db: Session = Depends(get_db)):
-    """The most recent tickets that the AI suggested fix solved."""
-    tickets = get_tickets_solved_by_ai(db)
-
-    return [
-        {
-            "id": ticket.id,
-            "issue_text": ticket.issue_text,
-            "category": ticket.category,
-            "priority": ticket.priority,
-            "suggested_fix": ticket.suggested_fix,
-            "created_at": ticket.created_at,
-        }
-        for ticket in tickets
-    ]
-
-@router.get("/todays-tickets")
-def get_todays_tickets_route(db: Session = Depends(get_db)):
-    """Tickets raised today, newest first."""
-    tickets = get_todays_tickets(db)
-
-    return [
-        {
-            "id": ticket.id,
-            "issue_text": ticket.issue_text,
-            "category": ticket.category,
-            "priority": ticket.priority,
-            "status": ticket.status,
-            "flag": ticket.flag,
-            "created_at": ticket.created_at,
-        }
-        for ticket in tickets
-    ]
-
-def ticket_to_dict(ticket):
-    """The ticket fields the dashboard lists show."""
-    return {
-        "id": ticket.id,
-        "issue_text": ticket.issue_text,
-        "category": ticket.category,
-        "priority": ticket.priority,
-        "status": ticket.status,
-        "flag": ticket.flag,
-        "suggested_fix": ticket.suggested_fix,
-        "created_at": ticket.created_at,
-    }
-
-@router.get("/overview")
-def get_overview(db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
-    """Everything the dashboard shows, in one request."""
-    total = count_total_tickets(db)
-    solved_by_ai = count_tickets_solved_by_ai(db)
-
-    # Share of all tickets that the AI fix resolved without an admin.
-    deflection_rate = round(solved_by_ai / total * 100, 1) if total else 0
+def get_summary(category: Category | None = None, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
+    """Metrics and chart data for the admin's tickets."""
+    allowed_category = category_for(admin, category)
+    scope = ticket_scope(category=allowed_category)
 
     return {
-        "kpis": {
-            "total": total,
-            "open": count_unsolved_tickets(db),
-            "solved_by_ai": solved_by_ai,
-            "deflection_rate": deflection_rate,
-            "needs_review": count_needs_review(db),
-        },
-        "by_category": [
-            {"category": category, "count": count}
-            for category, count in count_tickets_by_category(db)
-        ],
-        "by_priority": [
-            {"priority": priority, "count": count}
-            for priority, count in count_tickets_by_priority(db)
-        ],
-        "recent": [ticket_to_dict(ticket) for ticket in get_recent_tickets(db)],
-        "flagged": [ticket_to_dict(ticket) for ticket in get_flagged_tickets(db)],
+        "category": allowed_category,
+        "metrics": ticket_metrics(db, scope),
+        "by_category": count_by_category(db, scope),
+        "by_priority": count_by_priority(db, scope),
+        "by_day": count_by_day(db, scope),
     }
+
+
+@router.get("/tickets")
+def get_tickets(category: Category | None = None, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
+    """The admin's tickets with full details, newest first."""
+    scope = ticket_scope(category=category_for(admin, category))
+    return list_tickets(db, scope)
+
 
 @router.get("/users")
 def get_users(db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
-    """The users who have raised tickets, for the 'As user' page."""
-    users = get_users_with_tickets(db)
+    """Employees who raised a ticket the admin can see, for the employee picker."""
+    scope = ticket_scope(category=category_for(admin, None))
+    return list_users_with_tickets(db, scope)
 
-    return [{"slack_id": user.slack_id, "name": user.name} for user in users]
 
-@router.get("/user-tickets")
-def get_user_tickets(slack_id: str, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
-    """Every ticket one user has raised, with its status and the AI suggested fix."""
-    tickets = get_tickets_of_user(db, slack_id)
-
-    return [ticket_to_dict(ticket) for ticket in tickets]
-
-@router.get("/category-tickets")
-def get_category_tickets(category: Category, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
-    """Every ticket in one category, with counts, for the 'As admin' page."""
-    tickets = get_tickets_in_category(db, category.value)
-
-    open_count = 0
-    needs_review_count = 0
-    for ticket in tickets:
-        if ticket.status != RESOLVED_STATUS:
-            open_count += 1
-        if ticket.needs_review:
-            needs_review_count += 1
+@router.get("/users/{slack_id}")
+def get_user_dashboard(slack_id: str, db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
+    """One employee's numbers, their high-severity tickets and all their tickets (limited to the admin's category)."""
+    scope = ticket_scope(category=category_for(admin, None), slack_id=slack_id)
 
     return {
-        "total": len(tickets),
-        "open": open_count,
-        "needs_review": needs_review_count,
-        "tickets": [ticket_to_dict(ticket) for ticket in tickets],
+        "metrics": ticket_metrics(db, scope),
+        "high_severity": list_tickets(db, scope, high_severity_only=True),
+        "tickets": list_tickets(db, scope),
     }
+
+
+@router.get("/my-tickets")
+def get_my_tickets(db: Session = Depends(get_db), employee: User = Depends(get_current_employee)):
+    """The signed-in employee's own numbers and every ticket they submitted. Employees only."""
+    scope = ticket_scope(slack_id=employee.slack_id)
+
+    return {
+        "name": employee.name,
+        "metrics": ticket_metrics(db, scope),
+        "by_priority": count_by_priority(db, scope),
+        "tickets": list_tickets(db, scope),
+    }
+
+
+@router.get("/admins")
+def get_admins(db: Session = Depends(get_db), admin: Admin = Depends(get_current_admin)):
+    """Every admin, the field they look after and the open work in it. Super admins only."""
+    if not is_super_admin(admin):
+        raise HTTPException(status_code=403, detail="Only a super admin can see the admin list")
+
+    return [admin_to_dict(db, other_admin, name) for other_admin, name in list_admins(db)]
+
+
+def admin_to_dict(db: Session, admin: Admin, name: str | None) -> dict:
+    """One row of the admin list. Workload numbers are None for a super admin, who has no single category."""
+    category = ADMIN_CATEGORY.get(admin.role)
+    row = {
+        "id": admin.id,
+        "name": name,
+        "email": admin.email,
+        "role": admin.role,
+        "category": category,
+        "can_sign_in": admin.password_hash is not None,
+        "open_tickets": None,
+        "high_severity_open": None,
+        "resolved": None,
+    }
+
+    if category is not None:
+        workload = ticket_metrics(db, ticket_scope(category=category))
+        row["open_tickets"] = workload["active"] + workload["pending_response"]
+        row["high_severity_open"] = workload["high_severity_open"]
+        row["resolved"] = workload["resolved"]
+
+    return row
