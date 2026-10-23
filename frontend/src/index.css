@@ -168,6 +168,13 @@ select {
   font-weight: 400;
 }
 
+/* Shown instead of a blank page if a page crashes */
+.crash-screen {
+  max-width: 560px;
+  margin: 15vh auto 0;
+  padding: 0 16px;
+}
+
 /* App layout: the sidebar on the left, the page on the right */
 
 .app {

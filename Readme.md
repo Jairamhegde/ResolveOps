@@ -92,10 +92,15 @@ What an admin sees depends on their type. A **category admin** (network, hardwar
 The demo has three accounts, created by `python -m scripts.create_demo_admins`: `super@demo.com` / `demo-super-123`, `network@demo.com` / `demo-network-123` and the employee `employee@demo.com` / `demo-employee-123`. The login page fills any of them in with one click.
 
 <p align="center">
-  <img src="images/dashboard-super-admin.png" alt="Super admin view: AI deflection rate, ticket counts, and charts by category and priority" width="49%">
-  <img src="images/dashboard-user.png" alt="User view: an employee's tickets with status, priority, flag and the AI suggested fix" width="49%">
+  <img src="images/dashboard-super-admin.png" alt="Super admin overview: AI deflection rate, active, closed, high severity and needs-review counts, where tickets stand, tickets per day, counts by priority and category, and open P1 and P2 tickets" width="100%">
 </p>
-<p align="center"><em>Left: super admin view. Right: an employee's tickets.</em></p>
+<p align="center"><em>The super admin overview (sample data).</em></p>
+
+<p align="center">
+  <img src="images/dashboard-tickets.png" alt="Tickets page with quick filters and the details panel of one ticket: priority, category, who raised it, timestamps, SLA countdown and the AI suggested fix" width="49%">
+  <img src="images/dashboard-user.png" alt="Employee My tickets page: total, solved, still open and high priority counts, the priority of each ticket, and every ticket submitted" width="49%">
+</p>
+<p align="center"><em>Left: a ticket's details. Right: an employee's own tickets.</em></p>
 
 It supports light and dark mode and works at phone width. The frontend is plain React with no chart library: the charts are CSS bars. Each piece (`Sidebar`, `Metrics`, `TicketTable`, `TicketDetails`, `Charts`, …) is a component with its own CSS file, and every page loads its data through one small `useApi` hook.
 
