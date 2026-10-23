@@ -1,14 +1,14 @@
 import "./pageheader.css";
 
-// The title at the top of each page. Anything passed as children shows on the right.
-function PageHeader({ title, subtitle, children }) {
+// The title row of a page. `actions` (filters, pickers) sit on the right.
+function PageHeader({ title, subtitle, actions }) {
   return (
     <header className="page-header">
       <div>
-        <h2 className="page-header-title">{title}</h2>
-        {subtitle && <p className="page-header-subtitle">{subtitle}</p>}
+        <h1 className="page-title">{title}</h1>
+        {subtitle && <p className="page-subtitle">{subtitle}</p>}
       </div>
-      {children}
+      {actions && <div className="page-actions">{actions}</div>}
     </header>
   );
 }

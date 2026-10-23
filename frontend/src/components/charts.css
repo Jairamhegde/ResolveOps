@@ -1,0 +1,152 @@
+/* Status breakdown */
+
+.breakdown-bar {
+  display: flex;
+  gap: 3px;
+  height: 14px;
+}
+
+.breakdown-part {
+  min-width: 6px;
+  border-radius: 2px;
+}
+
+.breakdown-ai {
+  background-color: var(--ai);
+}
+
+.breakdown-admin {
+  background-color: var(--series);
+}
+
+.breakdown-waiting {
+  background-color: color-mix(in srgb, var(--series) 40%, var(--paper));
+}
+
+/* Open work is hatched: not done yet */
+.breakdown-active {
+  background: repeating-linear-gradient(135deg, var(--critical) 0 2px, transparent 2px 6px);
+  box-shadow: inset 0 0 0 1px var(--critical);
+}
+
+.breakdown-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.breakdown-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.breakdown-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.breakdown-label {
+  color: var(--ink-soft);
+}
+
+.breakdown-legend strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.breakdown-percent {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bar list */
+
+.bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bar-list-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 32px;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.bar-list-label {
+  color: var(--ink-soft);
+}
+
+.bar-list-track {
+  height: 18px;
+  border-radius: 2px;
+  background-color: var(--hover);
+}
+
+.bar-list-bar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 2px;
+  background-color: var(--series);
+}
+
+.bar-list-count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Tickets per day */
+
+.day-chart {
+  margin: 0;
+}
+
+.day-chart-bars {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  height: 150px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.day-chart-column {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.day-chart-count {
+  min-height: 18px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-chart-bar {
+  width: 100%;
+  max-width: 28px;
+  border-radius: 2px 2px 0 0;
+  background-color: var(--series);
+}
+
+.day-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}

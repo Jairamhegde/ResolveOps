@@ -1,41 +1,63 @@
-/* Colour tokens. Every component reads these, so light and dark mode are switched here only. */
+/* Colour tokens. Every component reads these, so light and dark mode are switched here only.
+   Saffron (--ai) is reserved for things the AI did, so it always means the same thing. */
 
 :root {
-  --page-background: #f5f6f8;
-  --panel-background: #ffffff;
-  --border: #e6e8ec;
-  --grid: #eef0f3;
-  --hover: #f1f4f9;
-  --text-primary: #0f172a;
-  --text-secondary: #52514e;
-  --text-muted: #8a8f98;
-  --series-1: #2a78d6;
-  --brand-start: #1c5cab;
-  --brand-end: #2a78d6;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --ground: #e9edf1;
+  --paper: #ffffff;
+  --ink: #172033;
+  --ink-soft: #46526a;
+  --muted: #667185;
+  --rule: #d3dae2;
+  --hover: #f2f5f8;
+  --series: #34507f;
+  --focus: #1f5fd1;
+
+  /* The navy band behind the navbar and page headers */
+  --band: #172033;
+  --band-text: #f3f5f8;
+  --band-muted: #a9b4c4;
+  --band-rule: #2e3a52;
+  --band-raised: #222d44;
+
+  --ai: #f0b323;
+  --ai-ink: #172033;
+  --ai-wash: #fdf4dc;
 
   /* Status colours: only for priority, status and flag badges, always next to a text label */
-  --good: #0ca30c;
-  --warning: #fab219;
-  --serious: #ec835a;
-  --critical: #d03b3b;
-  --info: #2a78d6;
-  --neutral: #a3a7ae;
+  --good: #0f8a3c;
+  --warning: #c98a00;
+  --serious: #d4622f;
+  --critical: #c62f2f;
+  --info: #2f62c4;
+  --neutral: #8a93a3;
+
+  --radius: 6px;
+  --wide: 118%;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --page-background: #111111;
-    --panel-background: #1a1a19;
-    --border: #2c2c2a;
-    --grid: #262624;
-    --hover: #242423;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #8f8e86;
-    --series-1: #3987e5;
-    --info: #3987e5;
-    --shadow: none;
+    --ground: #0d121b;
+    --paper: #151c28;
+    --ink: #e6ebf2;
+    --ink-soft: #b3bdcb;
+    --muted: #8792a3;
+    --rule: #263043;
+    --hover: #1b2433;
+    --series: #8aa5d6;
+    --focus: #f0b323;
+
+    --band: #080c13;
+    --band-rule: #1f293b;
+    --band-raised: #131b29;
+
+    --ai-wash: #2a2416;
+
+    --good: #3dbb6a;
+    --warning: #e3a923;
+    --serious: #ec835a;
+    --critical: #ec5b5b;
+    --info: #6b98f0;
   }
 }
 
@@ -43,82 +65,161 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
-  font-family: "Inter", Arial, Helvetica, sans-serif;
-  background-color: var(--page-background);
-  color: var(--text-primary);
+  font-family: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  background-color: var(--ground);
+  color: var(--ink);
   -webkit-font-smoothing: antialiased;
 }
 
 h1,
 h2,
+h3,
 p {
   margin: 0;
 }
 
-/* Page layout: KPI row, then two charts, then the two ticket lists */
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
 
-.dashboard {
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -48px;
+  z-index: 10;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  background: var(--ai);
+  color: var(--ai-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Shared controls */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--hover);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.field-control {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+/* App layout: the sidebar on the left, the page on the right */
+
+.app {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100vh;
+  /* Keeps the sidebar column navy below the sticky sidebar on long pages */
+  background: linear-gradient(to right, var(--band) 232px, var(--ground) 232px);
+}
+
+.page {
   display: flex;
   flex-direction: column;
   gap: 20px;
   max-width: 1280px;
-  margin: 0 auto;
-  padding: 24px;
+  padding: 32px 40px 56px;
 }
 
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
+.page-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  transition: opacity 150ms;
 }
 
-.chart-row {
+/* Old numbers stay visible, dimmed, while the next ones load */
+.page-content.is-loading {
+  opacity: 0.55;
+}
+
+.section-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   gap: 20px;
 }
 
-.list-row {
-  display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 20px;
-}
-
-.dashboard-message {
-  color: var(--text-secondary);
-}
-
-.dashboard-error {
-  padding: 12px 16px;
-  border: 1px solid var(--critical);
-  border-radius: 10px;
-  color: var(--text-primary);
-}
-
-@media (max-width: 1024px) {
-  .kpi-row {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .list-row {
-    grid-template-columns: 1fr;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }
 
-/* Phones: everything in one column */
-
-@media (max-width: 720px) {
-  .dashboard {
-    padding: 16px;
+@media (max-width: 860px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    background: var(--ground);
   }
 
-  .kpi-row {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .chart-row {
-    grid-template-columns: 1fr;
+  .page {
+    padding: 20px 16px 40px;
   }
 }

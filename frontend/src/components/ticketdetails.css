@@ -1,0 +1,100 @@
+.details-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  background-color: rgb(16 22 36 / 0.35);
+}
+
+.details {
+  width: min(480px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+  background-color: var(--paper);
+  border-left: 1px solid var(--rule);
+  animation: details-in 180ms ease-out;
+}
+
+/* The panel slides in from the right, so it's clear where it came from */
+@keyframes details-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+.details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.details-key {
+  color: var(--ink-soft);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.details-title {
+  margin-top: 16px;
+  font-size: 21px;
+  line-height: 1.3;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.details-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.details-fields {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 10px 16px;
+  margin: 24px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  font-size: 14px;
+}
+
+.details-fields dt {
+  color: var(--muted);
+}
+
+.details-fields dd {
+  margin: 0;
+}
+
+.details-muted {
+  color: var(--muted);
+}
+
+.details-sla {
+  margin-top: 20px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--serious);
+  background-color: var(--hover);
+  font-size: 14px;
+}
+
+/* The AI's fix sits on a saffron rule, the colour used for everything the AI does */
+.details-fix {
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--ai);
+  background-color: var(--ai-wash);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.details-fix-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}

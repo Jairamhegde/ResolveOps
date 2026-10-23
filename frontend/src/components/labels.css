@@ -1,0 +1,74 @@
+/* Priority: a marker whose height grows with urgency, so it reads without colour too */
+
+.priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.priority-marker {
+  width: 4px;
+  height: 6px;
+  border-radius: 1px;
+  background-color: var(--neutral);
+}
+
+.priority-number {
+  font-weight: 750;
+  font-stretch: var(--wide);
+  color: var(--ink);
+}
+
+.priority-critical .priority-marker {
+  height: 14px;
+  background-color: var(--critical);
+}
+
+.priority-high .priority-marker {
+  height: 11px;
+  background-color: var(--serious);
+}
+
+.priority-medium .priority-marker {
+  height: 8px;
+  background-color: var(--warning);
+}
+
+/* Lozenges: tinted labels for status, flags and AI fixes */
+
+.lozenge {
+  --tone: var(--neutral);
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background-color: color-mix(in srgb, var(--tone) 14%, var(--paper));
+  color: color-mix(in srgb, var(--tone) 70%, var(--ink));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.lozenge-good {
+  --tone: var(--good);
+}
+
+.lozenge-info {
+  --tone: var(--info);
+}
+
+.lozenge-warning {
+  --tone: var(--warning);
+}
+
+.lozenge-critical {
+  --tone: var(--critical);
+}
+
+.lozenge-ai {
+  background-color: var(--ai);
+  color: var(--ai-ink);
+}

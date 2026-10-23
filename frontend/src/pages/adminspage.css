@@ -1,0 +1,30 @@
+.admin-table td {
+  vertical-align: top;
+}
+
+.admin-name {
+  font-weight: 650;
+}
+
+.admin-email {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.cell-number {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ticket-table th.cell-number {
+  text-align: right;
+}
+
+.admin-table td.cell-number {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.cell-alert {
+  color: var(--critical);
+}

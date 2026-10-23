@@ -14,6 +14,14 @@ Employees file issues with a slash command. Gemini classifies, prioritizes, and 
 
 > Free-tier Render host: open the health check first to wake the backend up (~30s cold start).
 
+## Architecture
+
+<p align="center">
+  <img src="images/architecture.png" alt="ResolveOps architecture: Slack requests pass an HMAC check and a fast webhook route, then a background task triages with Gemini, routes the ticket and saves it to PostgreSQL" width="100%">
+</p>
+
+Every Slack request passes the HMAC check and is acknowledged within 3 seconds. `/ticket` is triaged by Gemini and either gets a self-service fix or goes to the admin queue for its category; admin commands check the admin's role first. The SLA scheduler escalates overdue tickets every 15 minutes. Not shown: GitHub webhooks (HMAC check, then a card in the repo's Slack channel) and the dashboard (JWT login, then read-only queries).
+
 ---
 
 ## Features
@@ -68,13 +76,20 @@ Slack sends slash commands as form-encoded fields (`user_id`, `user_name`, `text
 
 **Live:** [resolveops-1.onrender.com](https://resolveops-1.onrender.com)
 
-Admins sign in with an email and password. The backend checks the bcrypt hash and returns a JWT that is valid for 8 hours; every dashboard request sends it as `Authorization: Bearer <token>`, and an expired token sends the user back to the login page. The tabs in the navbar show the same data from three points of view:
+Admins sign in with an email and password. The backend checks the bcrypt hash and returns a JWT that is valid for 8 hours; every dashboard request sends it as `Authorization: Bearer <token>`, and an expired token sends the user back to the login page.
 
-| Tab | What it shows |
-|---|---|
-| **As super admin** | The **AI deflection rate** (share of tickets the AI fix solved with no admin), total, open, AI-solved and needs-review counts, bar charts of tickets by category and by priority, the 10 most recent tickets, and the tickets caught by the AI guard (spam, prompt injection, unclear). Refreshes every 10 seconds. |
-| **As admin** | A category admin's queue (network in the demo): total, open and needs-review counts, and every ticket in that category, most urgent first. |
-| **As user** | Pick an employee to see the tickets they raised in Slack, their status, and the AI's suggested fix. |
+**Employees** can sign in too (pick *Employee* on the login page). They get one page, **My tickets**: total tickets, solved (by the AI or by IT), still open, how many were high priority, the priority of every ticket, and every ticket they submitted with its details. Their token is marked as an employee token, so it can't be used on any admin endpoint, and an admin token can't be used as an employee's. An employee needs a `password_hash` in `user_details` (added by migration `7c3e1f0a9b2d`) to sign in.
+
+What an admin sees depends on their type. A **category admin** (network, hardware, software, iam, other) only ever sees tickets in their own category; the backend enforces this, so asking for another category returns their own. A **super admin** sees every category, can filter to one, and has an extra **Admins** page.
+
+| Page | Who | What it shows |
+|---|---|---|
+| **Overview** | All admins | AI deflection rate, total raised, active (with IT / waiting on the employee), closed (by IT / by the AI), high severity still open and needs review; a bar of where every ticket stands; tickets raised per day for 14 days; counts by priority and (super admin) by category; and every P1–P2 ticket still open. Refreshes every 30 seconds. |
+| **Tickets** | All admins | A Jira-style table with quick filters (all, active, high severity, needs review, closed) and search. Clicking a ticket opens its details: priority, category, who raised it, created and escalated timestamps, who resolved it, the SLA countdown and the AI's suggested fix. |
+| **Employees** | All admins | One employee's tickets raised, solved, still open and high severity, their P1–P2 tickets with timestamps, and all their tickets. |
+| **Admins** | Super admin | Every admin, the field they look after, whether they can sign in to the dashboard, and the open, high-severity and closed tickets in their field. Flags fields that have no admin. |
+
+The demo has three accounts, created by `python -m scripts.create_demo_admins`: `super@demo.com` / `demo-super-123`, `network@demo.com` / `demo-network-123` and the employee `employee@demo.com` / `demo-employee-123`. The login page fills any of them in with one click.
 
 <p align="center">
   <img src="images/dashboard-super-admin.png" alt="Super admin view: AI deflection rate, ticket counts, and charts by category and priority" width="49%">
@@ -82,7 +97,7 @@ Admins sign in with an email and password. The backend checks the bcrypt hash an
 </p>
 <p align="center"><em>Left: super admin view. Right: an employee's tickets.</em></p>
 
-It supports light and dark mode and works at phone width. Each UI piece (`Navbar`, `StatCard`, `BarChartCard`, `TicketCard`, …) is a reusable component with its own CSS file.
+It supports light and dark mode and works at phone width. The frontend is plain React with no chart library: the charts are CSS bars. Each piece (`Sidebar`, `Metrics`, `TicketTable`, `TicketDetails`, `Charts`, …) is a component with its own CSS file, and every page loads its data through one small `useApi` hook.
 
 ### Dashboard API
 
@@ -91,13 +106,15 @@ The dashboard API is served by the same FastAPI app as the Slack webhooks (`back
 | Endpoint | Auth | Returns |
 |---|---|---|
 | `POST /api/auth/login` | – | `{ token, email, role }` for a correct email and password, otherwise 401. |
-| `GET /api/dashboard/overview` | JWT | Everything the super admin view shows: `kpis` (total, open, solved_by_ai, deflection_rate, needs_review), `by_category`, `by_priority`, the 10 most `recent` tickets, and the `flagged` tickets. |
-| `GET /api/dashboard/category-tickets?category=` | JWT | Every ticket in one category, with total, open and needs-review counts. |
-| `GET /api/dashboard/users` | JWT | The users who have raised tickets. |
-| `GET /api/dashboard/user-tickets?slack_id=` | JWT | Every ticket one user raised. |
-| `GET /api/dashboard/summary` | – | Total, solved, unsolved and AI-solved counts. |
-| `GET /api/dashboard/ai-solved-tickets` | – | The latest tickets the AI fix solved. |
-| `GET /api/dashboard/todays-tickets` | – | Tickets raised since midnight UTC, newest first. |
+| `POST /api/auth/employee-login` | – | `{ token, email, name, role: "employee" }` for an employee with a password, otherwise 401. |
+| `GET /api/dashboard/my-tickets` | Employee JWT | The signed-in employee's `metrics`, `by_priority` and all their `tickets`. |
+| `GET /api/dashboard/summary?category=` | JWT | `metrics` (total, active, pending_response, resolved, solved_by_ai, solved_by_admin, deflection_rate, high_severity, high_severity_open, needs_review), `by_category`, `by_priority` and `by_day` (last 14 days). |
+| `GET /api/dashboard/tickets?category=` | JWT | Tickets with full details and the name of the employee who raised them, newest first. |
+| `GET /api/dashboard/users` | JWT | Employees who raised a ticket the admin can see. |
+| `GET /api/dashboard/users/{slack_id}` | JWT | One employee's `metrics`, `high_severity` tickets and all their `tickets`. |
+| `GET /api/dashboard/admins` | JWT, super admin | Every admin with their field and the open, high-severity and closed tickets in it. |
+
+`category` is only used for a super admin; a category admin always gets their own category. All the counting is in `backendapi/queries/ticket_queries.py`: each query takes a *scope* (a list of SQLAlchemy filters for a category and/or an employee), and `ticket_metrics` counts every headline number in one query with `COUNT(...) FILTER (WHERE ...)`.
 
 ## Testing
 
@@ -112,6 +129,8 @@ Tests run against a **SQLite test database** (`testing/test.db`), never the real
 |---|---|
 | `test_admin_tickets.py` | Admin types: who can `/resolve` and `/listissue` which categories, super admin access, `add_admin`, the super-admin check, ticket creation when the AI answers and when it fails |
 | `test_crud.py` | The `/ticket` background job: saves the ticket, registers a first-time user, and still replies "Server is not active." in Slack when something crashes |
+| `test_dashboard_queries.py` | Dashboard metrics, category and employee scopes, P1–P5 and per-day counts with gaps filled, that a category admin can't see other categories, and the admin list's workload numbers |
+| `test_employee_login.py` | Employee login, that an employee only sees their own tickets, and that employee and admin tokens can't be swapped |
 | `test_ai_response.py` | The real Gemini triage: response shape, category, and that non-IT messages are flagged (marked `ai`) |
 
 ```bash
@@ -131,14 +150,6 @@ pytest -m ai        # only the Gemini test (uses real quota, needs GEMINI_API)
 **Automation:** APScheduler  
 **Integrations:** Slack Slash Commands, Interactivity and Web API, GitHub Webhooks  
 **Testing / CI / Deploy:** Pytest, SQLite, GitHub Actions, Render
-
-## Architecture
-
-<p align="center">
-  <img src="images/architecture.png" alt="ResolveOps architecture: Slack requests pass an HMAC check and a fast webhook route, then a background task triages with Gemini, routes the ticket and saves it to PostgreSQL" width="100%">
-</p>
-
-Every Slack request passes the HMAC check and is acknowledged within 3 seconds. `/ticket` is triaged by Gemini and either gets a self-service fix or goes to the admin queue for its category; admin commands check the admin's role first. The SLA scheduler escalates overdue tickets every 15 minutes. Not shown: GitHub webhooks (HMAC check, then a card in the repo's Slack channel) and the dashboard (JWT login, then read-only queries).
 
 ## Project Structure
 
