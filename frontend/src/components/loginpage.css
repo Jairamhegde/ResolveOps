@@ -1,105 +1,143 @@
+/* The sign-in page, laid out like Atlassian's: one centred card on a quiet background */
+
 .login-page {
   display: grid;
   place-items: center;
   min-height: 100vh;
-  padding: 32px 16px;
+  padding: 40px 16px;
+  background:
+    radial-gradient(60rem 30rem at 0% 100%, color-mix(in srgb, var(--brand) 8%, transparent), transparent 70%),
+    radial-gradient(50rem 28rem at 100% 0%, color-mix(in srgb, var(--ai) 6%, transparent), transparent 70%),
+    var(--page);
+}
+
+.login-theme {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+}
+
+.login-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 400px;
 }
 
 .login-card {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   width: 100%;
-  max-width: 400px;
-  padding: 32px;
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  background-color: var(--paper);
+  padding: 32px 40px;
+  border-radius: var(--radius-card);
+  background-color: var(--surface);
+  box-shadow: var(--shadow-overlay);
 }
 
 .login-brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  font-size: 17px;
-  font-weight: 750;
-  font-stretch: var(--wide);
-}
-
-/* The brand mark is drawn for the navy sidebar; on white it needs a navy top */
-.login-brand .brand-mark {
-  background: linear-gradient(to bottom, var(--ink) 0 58%, transparent 58% 70%, var(--ai) 70%);
-}
-
-.login-title {
-  font-size: 28px;
-  line-height: 1.15;
-  font-weight: 800;
-  font-stretch: var(--wide);
+  font-size: 20px;
+  font-weight: 650;
   letter-spacing: -0.015em;
 }
 
-.login-subtitle {
-  margin-top: 4px;
-  color: var(--ink-soft);
+.login-brand .brand-mark {
+  width: 32px;
+  height: 32px;
 }
 
-/* IT admin / Employee switch */
-
-.login-kinds {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  padding: 3px;
-  border-radius: var(--radius);
-  background-color: var(--hover);
+.login-title {
+  margin-bottom: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-subtle);
 }
 
-.login-kind {
-  min-height: 36px;
+/* Admin / Super admin / User */
+
+.login-roles {
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-radius: 4px;
+}
+
+.login-roles legend {
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+.login-role-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background-color: var(--sunken);
+}
+
+.login-role {
+  min-height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius);
   background: none;
-  color: var(--ink-soft);
-  font-weight: 650;
+  color: var(--text-subtle);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.login-kind-active {
-  background-color: var(--paper);
-  color: var(--ink);
-  box-shadow: 0 0 0 1px var(--rule);
+.login-role:hover {
+  color: var(--text);
+}
+
+.login-role-active,
+.login-role-active:hover {
+  background-color: var(--surface);
+  color: var(--brand-text);
+  font-weight: 600;
+  box-shadow: var(--shadow-raised);
+}
+
+.login-role-about {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-subtlest);
 }
 
 .login-input {
-  min-height: 42px;
-  font-size: 15px;
+  min-height: 40px;
+  padding: 0 10px;
 }
 
 .login-notice {
-  padding: 10px 12px;
-  border-left: 3px solid var(--warning);
-  background-color: var(--hover);
-  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background-color: var(--warning-subtle);
+  color: var(--text);
+  font-size: 13px;
 }
 
 .login-error {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--critical);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background-color: var(--danger-subtle);
+  color: var(--danger-text);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .login-button {
-  min-height: 44px;
-  border: 0;
-  border-radius: var(--radius);
-  background-color: var(--band);
-  color: var(--band-text);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.login-button:hover:not(:disabled) {
-  background-color: var(--band-raised);
+  min-height: 40px;
+  font-weight: 600;
 }
 
 .login-button:disabled {
@@ -107,55 +145,22 @@
   opacity: 0.7;
 }
 
-@media (prefers-color-scheme: dark) {
-  .login-button {
-    background-color: var(--ai);
-    color: var(--ai-ink);
-  }
-
-  .login-button:hover:not(:disabled) {
-    background-color: #f5c552;
-  }
-}
-
-/* Demo accounts */
-
-.login-demo {
+.login-hint {
   padding-top: 16px;
-  border-top: 1px solid var(--rule);
-  font-size: 13px;
-  color: var(--muted);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-subtlest);
+  text-align: center;
 }
 
-.login-demo-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.login-demo-button {
-  padding: 4px 10px;
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  background: none;
-  color: var(--ink-soft);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.login-demo-button:hover {
-  background-color: var(--hover);
-}
-
-.login-demo-active {
-  border-color: var(--ink);
-  color: var(--ink);
+.login-footer {
+  font-size: 12px;
+  color: var(--text-subtlest);
+  text-align: center;
 }
 
 @media (max-width: 480px) {
   .login-card {
-    padding: 24px 18px;
+    padding: 28px 20px;
   }
 }

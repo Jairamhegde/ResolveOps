@@ -12,13 +12,10 @@ import TicketDetails from "../components/TicketDetails";
 
 const REFRESH_EVERY_MS = 30000;
 
-// Most urgent first, then newest first.
 function byUrgency(a, b) {
   return a.priority - b.priority || new Date(b.created_at) - new Date(a.created_at);
 }
 
-// The headline numbers, charts and the high-severity tickets still open.
-// A category admin only ever sees their own category; a super admin can pick one or see all.
 function OverviewPage({ token, isSuperAdmin }) {
   const [category, setCategory] = useState("");
   const [selectedTicket, setSelectedTicket] = useState(null);

@@ -1,14 +1,18 @@
-/* Status breakdown */
+/* Status breakdown. Colours match the status lozenges: magenta for the AI, green for IT fixes,
+   yellow for waiting on the employee and blue for work IT still has.
+   The other charts use the violet brand colour. */
 
 .breakdown-bar {
   display: flex;
-  gap: 3px;
-  height: 14px;
+  gap: 2px;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 6px;
+  background-color: var(--sunken);
 }
 
 .breakdown-part {
   min-width: 6px;
-  border-radius: 2px;
 }
 
 .breakdown-ai {
@@ -16,27 +20,24 @@
 }
 
 .breakdown-admin {
-  background-color: var(--series);
+  background-color: var(--success);
 }
 
 .breakdown-waiting {
-  background-color: color-mix(in srgb, var(--series) 40%, var(--paper));
+  background-color: var(--warning);
 }
 
-/* Open work is hatched: not done yet */
 .breakdown-active {
-  background: repeating-linear-gradient(135deg, var(--critical) 0 2px, transparent 2px 6px);
-  box-shadow: inset 0 0 0 1px var(--critical);
+  background-color: var(--info);
 }
 
 .breakdown-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 28px;
-  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  gap: 12px 24px;
+  margin: 16px 0 0;
   padding: 0;
   list-style: none;
-  font-size: 14px;
 }
 
 .breakdown-legend li {
@@ -46,22 +47,27 @@
 }
 
 .breakdown-swatch {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
   border-radius: 2px;
 }
 
 .breakdown-label {
-  color: var(--ink-soft);
+  color: var(--text-subtle);
 }
 
 .breakdown-legend strong {
+  margin-left: auto;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .breakdown-percent {
-  color: var(--muted);
+  min-width: 36px;
+  color: var(--text-subtlest);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 /* Bar list */
@@ -69,7 +75,7 @@
 .bar-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -77,32 +83,34 @@
 
 .bar-list-row {
   display: grid;
-  grid-template-columns: 120px 1fr 32px;
+  grid-template-columns: 112px 1fr 32px;
   align-items: center;
   gap: 12px;
-  font-size: 14px;
 }
 
 .bar-list-label {
-  color: var(--ink-soft);
+  overflow: hidden;
+  color: var(--text-subtle);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bar-list-track {
-  height: 18px;
-  border-radius: 2px;
-  background-color: var(--hover);
+  height: 8px;
+  border-radius: 4px;
+  background-color: var(--sunken);
 }
 
 .bar-list-bar {
   display: block;
   height: 100%;
   min-width: 2px;
-  border-radius: 2px;
-  background-color: var(--series);
+  border-radius: 4px;
+  background-color: var(--brand);
 }
 
 .bar-list-count {
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -116,9 +124,13 @@
 .day-chart-bars {
   display: flex;
   align-items: stretch;
-  gap: 4px;
-  height: 150px;
-  border-bottom: 1px solid var(--rule);
+  gap: 6px;
+  height: 160px;
+  padding-top: 4px;
+  border-bottom: 1px solid var(--border);
+  background-image: linear-gradient(var(--border) 1px, transparent 1px);
+  background-size: 100% 25%;
+  background-position: 0 -1px;
 }
 
 .day-chart-column {
@@ -130,23 +142,29 @@
 }
 
 .day-chart-count {
-  min-height: 18px;
+  min-height: 16px;
   font-size: 11px;
-  color: var(--muted);
+  line-height: 16px;
+  color: var(--text-subtlest);
   font-variant-numeric: tabular-nums;
 }
 
 .day-chart-bar {
   width: 100%;
-  max-width: 28px;
-  border-radius: 2px 2px 0 0;
-  background-color: var(--series);
+  max-width: 24px;
+  border-radius: 3px 3px 0 0;
+  background-color: var(--brand);
+  transition: background-color 120ms;
+}
+
+.day-chart-column:hover .day-chart-bar {
+  background-color: var(--brand-hover);
 }
 
 .day-chart-axis {
   display: flex;
   justify-content: space-between;
-  margin-top: 6px;
+  margin-top: 8px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-subtlest);
 }

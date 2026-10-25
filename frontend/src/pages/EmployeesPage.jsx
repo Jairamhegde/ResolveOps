@@ -7,8 +7,7 @@ import { ErrorMessage, Loading, Section } from "../components/Section";
 import TicketTable from "../components/TicketTable";
 import TicketDetails from "../components/TicketDetails";
 
-// One employee's dashboard: what they raised, what got solved, and their high-severity tickets.
-// Employees don't sign in to the dashboard, so the admin picks whose tickets to see.
+
 function EmployeesPage({ token }) {
   const [pickedId, setPickedId] = useState("");
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -43,7 +42,7 @@ function EmployeesPage({ token }) {
 
       {error && <ErrorMessage message={error} onRetry={users.error ? users.reload : dashboard.reload} />}
       {!error && (!users.data || (slackId && !dashboard.data)) && <Loading />}
-      {users.data?.length === 0 && <p className="table-empty">No one has raised a ticket yet. Employees appear here after their first /ticket in Slack.</p>}
+      {users.data?.length === 0 && <p className="table-empty">No one has raised a ticket yet. Employees appear here after their first /helpdesk in Slack.</p>}
 
       {dashboard.data && (
         <div className={dashboard.loading ? "page-content is-loading" : "page-content"}>

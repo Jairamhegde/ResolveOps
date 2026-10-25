@@ -1,64 +1,106 @@
-/* Colour tokens. Every component reads these, so light and dark mode are switched here only.
-   Saffron (--ai) is reserved for things the AI did, so it always means the same thing. */
+/* Colour tokens: a white dashboard with a violet accent, Jira-style layout and status colours. Every component reads these,
+   so light and dark mode are switched here only.
+   Magenta (--ai) is reserved for things the AI did, so it always means the same thing. */
 
 :root {
-  --ground: #e9edf1;
-  --paper: #ffffff;
-  --ink: #172033;
-  --ink-soft: #46526a;
-  --muted: #667185;
-  --rule: #d3dae2;
-  --hover: #f2f5f8;
-  --series: #34507f;
-  --focus: #1f5fd1;
+  --page: #f9fafb;
+  --surface: #ffffff;
+  --sunken: #f3f4f6;
+  --hover: #f3f4f6;
+  --pressed: #e5e7eb;
+  --text: #111827;
+  --text-subtle: #4b5563;
+  --text-subtlest: #6b7280;
+  --border: #e5e7eb;
+  --border-input: #d1d5db;
 
-  /* The navy band behind the navbar and page headers */
-  --band: #172033;
-  --band-text: #f3f5f8;
-  --band-muted: #a9b4c4;
-  --band-rule: #2e3a52;
-  --band-raised: #222d44;
+  --brand: #7c3aed;
+  --brand-hover: #6d28d9;
+  --brand-text: #6d28d9;
+  --selected: #f5f3ff;
+  --on-brand: #ffffff;
+  --focus: #8b5cf6;
 
-  --ai: #f0b323;
-  --ai-ink: #172033;
-  --ai-wash: #fdf4dc;
+  --ai: #c026d3;
+  --ai-text: #a21caf;
+  --ai-subtle: #fdf4ff;
 
   /* Status colours: only for priority, status and flag badges, always next to a text label */
-  --good: #0f8a3c;
-  --warning: #c98a00;
-  --serious: #d4622f;
-  --critical: #c62f2f;
-  --info: #2f62c4;
-  --neutral: #8a93a3;
+  --success: #22a06b;
+  --success-text: #216e4e;
+  --success-subtle: #dcfff1;
+  --warning: #e2b203;
+  --warning-text: #a54800;
+  --warning-subtle: #fff7d6;
+  --danger: #c9372c;
+  --danger-text: #ae2e24;
+  --danger-subtle: #ffeceb;
+  --info: #1d7afc;
+  --info-text: #0055cc;
+  --info-subtle: #e9f2ff;
+  --neutral-subtle: #dcdfe4;
+  --orange: #e56910;
+  --medium: #b38600;
+  --low: #1d7afc;
 
-  --radius: 6px;
-  --wide: 118%;
+  --shadow-raised: 0 1px 1px rgb(17 24 39 / 0.05), 0 0 0 1px rgb(17 24 39 / 0.07);
+  --shadow-overlay: 0 12px 32px rgb(17 24 39 / 0.12), 0 0 0 1px rgb(17 24 39 / 0.07);
+  --blanket: rgb(17 24 39 / 0.4);
+
+  --radius: 4px;
+  --radius-card: 8px;
+  --topbar: 56px;
+  --sidebar: 240px;
+
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ground: #0d121b;
-    --paper: #151c28;
-    --ink: #e6ebf2;
-    --ink-soft: #b3bdcb;
-    --muted: #8792a3;
-    --rule: #263043;
-    --hover: #1b2433;
-    --series: #8aa5d6;
-    --focus: #f0b323;
+/* Dark theme, switched on with the toggle in the top bar (see theme.js) */
+:root[data-theme="dark"] {
+  --page: #111113;
+  --surface: #1a1a1e;
+  --sunken: #151518;
+  --hover: #232328;
+  --pressed: #2e2e34;
+  --text: #ededef;
+  --text-subtle: #a1a1aa;
+  --text-subtlest: #8a8a93;
+  --border: #2a2a30;
+  --border-input: #3f3f46;
 
-    --band: #080c13;
-    --band-rule: #1f293b;
-    --band-raised: #131b29;
+  --brand: #a78bfa;
+  --brand-hover: #c4b5fd;
+  --brand-text: #c4b5fd;
+  --selected: #2a2340;
+  --on-brand: #1e1035;
+  --focus: #a78bfa;
 
-    --ai-wash: #2a2416;
+  --ai: #e879f9;
+  --ai-text: #f0abfc;
+  --ai-subtle: #3b1a3f;
 
-    --good: #3dbb6a;
-    --warning: #e3a923;
-    --serious: #ec835a;
-    --critical: #ec5b5b;
-    --info: #6b98f0;
-  }
+  --success: #4bce97;
+  --success-text: #7ee2b8;
+  --success-subtle: #1c3329;
+  --warning: #f5cd47;
+  --warning-text: #fec195;
+  --warning-subtle: #332e1b;
+  --danger: #f87168;
+  --danger-text: #fd9891;
+  --danger-subtle: #42221f;
+  --info: #579dff;
+  --info-text: #85b8ff;
+  --info-subtle: #1c2b41;
+  --neutral-subtle: #38414a;
+  --orange: #fea362;
+  --medium: #e2b203;
+  --low: #579dff;
+
+  --shadow-raised: 0 0 0 1px rgb(255 255 255 / 0.06);
+  --shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.08);
+  --blanket: rgb(16 18 20 / 0.6);
+
+  color-scheme: dark;
 }
 
 * {
@@ -71,11 +113,11 @@ html {
 
 body {
   margin: 0;
-  font-family: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 15px;
-  line-height: 1.5;
-  background-color: var(--ground);
-  color: var(--ink);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  background-color: var(--page);
+  color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -102,12 +144,12 @@ select {
   position: absolute;
   left: 16px;
   top: -48px;
-  z-index: 10;
+  z-index: 40;
   padding: 8px 14px;
   border-radius: var(--radius);
-  background: var(--ai);
-  color: var(--ai-ink);
-  font-weight: 700;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-weight: 600;
   text-decoration: none;
 }
 
@@ -124,23 +166,33 @@ select {
   white-space: nowrap;
 }
 
+.icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
 /* Shared controls */
 
 .button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid var(--rule);
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
   border-radius: var(--radius);
-  background: var(--paper);
-  font-weight: 600;
+  background: var(--sunken);
+  color: var(--text-subtle);
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .button:hover {
-  background: var(--hover);
+  background: var(--pressed);
+  color: var(--text);
 }
 
 .button:disabled {
@@ -148,24 +200,63 @@ select {
   opacity: 0.55;
 }
 
+.button-subtle {
+  background: transparent;
+}
+
+.button-subtle:hover {
+  background: var(--hover);
+}
+
+.button-primary {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--brand-hover);
+  color: var(--on-brand);
+}
+
+/* A square icon button, like the theme switch */
+.theme-toggle {
+  width: 32px;
+  padding: 0;
+}
+
 .field {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--ink-soft);
+  color: var(--text-subtle);
 }
 
 .field-control {
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--paper);
-  color: var(--ink);
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border-input);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text);
   font-size: 14px;
   font-weight: 400;
+}
+
+.field-control:hover {
+  background: var(--hover);
+}
+
+.field-control:focus {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: inset 0 0 0 1px var(--focus);
+  background: var(--surface);
+}
+
+.field-control::placeholder {
+  color: var(--text-subtlest);
 }
 
 /* Shown instead of a blank page if a page crashes */
@@ -175,28 +266,54 @@ select {
   padding: 0 16px;
 }
 
-/* App layout: the sidebar on the left, the page on the right */
+/* App layout: the top bar across the top, the sidebar on the left, the page on the right */
 
 .app {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  grid-template-rows: var(--topbar) minmax(0, 1fr);
+  grid-template-areas:
+    "top top"
+    "side main";
   min-height: 100vh;
-  /* Keeps the sidebar column navy below the sticky sidebar on long pages */
-  background: linear-gradient(to right, var(--band) 232px, var(--ground) 232px);
+  /* Keeps the sidebar column white below the sticky sidebar on long pages */
+  background: linear-gradient(
+    to right,
+    var(--surface) calc(var(--sidebar) - 1px),
+    var(--border) calc(var(--sidebar) - 1px) var(--sidebar),
+    var(--page) var(--sidebar)
+  );
+}
+
+.app > .topbar {
+  grid-area: top;
+}
+
+.app > .sidebar {
+  grid-area: side;
+}
+
+.main {
+  grid-area: main;
+  min-width: 0;
+}
+
+.main:focus {
+  outline: none;
 }
 
 .page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  max-width: 1280px;
-  padding: 32px 40px 56px;
+  gap: 24px;
+  max-width: 1320px;
+  padding: 24px 40px 56px;
 }
 
 .page-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
   transition: opacity 150ms;
 }
 
@@ -207,8 +324,8 @@ select {
 
 .section-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 16px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -223,7 +340,12 @@ select {
 @media (max-width: 860px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
-    background: var(--ground);
+    grid-template-rows: var(--topbar) auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "side"
+      "main";
+    background: var(--page);
   }
 
   .page {

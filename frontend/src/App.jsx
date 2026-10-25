@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { setUnauthorizedHandler } from "./api";
 import LoginPage from "./components/LoginPage";
 import Sidebar from "./components/Sidebar";
+import TopBar from "./components/TopBar";
+import { OverviewIcon, PeopleIcon, ShieldIcon, TicketsIcon } from "./components/Icons";
 import OverviewPage from "./pages/OverviewPage";
 import TicketsPage from "./pages/TicketsPage";
 import EmployeesPage from "./pages/EmployeesPage";
@@ -12,10 +14,10 @@ const SESSION_KEY = "resolveops-session";
 
 // The pages in the sidebar. `superAdminOnly` pages are hidden from category admins.
 const PAGES = [
-  { id: "overview", label: "Overview", Page: OverviewPage },
-  { id: "tickets", label: "Tickets", Page: TicketsPage },
-  { id: "employees", label: "Employees", Page: EmployeesPage },
-  { id: "admins", label: "Admins", Page: AdminsPage, superAdminOnly: true },
+  { id: "overview", label: "Overview", Icon: OverviewIcon, Page: OverviewPage },
+  { id: "tickets", label: "Tickets", Icon: TicketsIcon, Page: TicketsPage },
+  { id: "employees", label: "Employees", Icon: PeopleIcon, Page: EmployeesPage },
+  { id: "admins", label: "Admins", Icon: ShieldIcon, Page: AdminsPage, superAdminOnly: true },
 ];
 
 // The login token's expiry time in ms, or 0 when it can't be read.
@@ -114,7 +116,8 @@ function App() {
       <a className="skip-link" href="#content">
         Skip to content
       </a>
-      <Sidebar pages={pages} currentId={currentPage.id} onOpen={openPage} session={session} onLogOut={() => logOut()} />
+      <TopBar session={session} onLogOut={() => logOut()} />
+      <Sidebar pages={pages} currentId={currentPage.id} onOpen={openPage} />
       <main className="main" id="content" tabIndex={-1}>
         <Page token={session.token} isSuperAdmin={isSuperAdmin} role={session.role} />
       </main>

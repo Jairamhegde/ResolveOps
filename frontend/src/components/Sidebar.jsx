@@ -1,41 +1,27 @@
-import { roleLabel } from "../format";
 import "./sidebar.css";
 
-// The left navigation: the brand, one link per page, and who is signed in.
-function Sidebar({ pages, currentId, onOpen, session, onLogOut }) {
+// The left navigation: one link per page.
+function Sidebar({ pages, currentId, onOpen }) {
   return (
     <aside className="sidebar">
-      <div className="sidebar-brand">
-        <span className="brand-mark" aria-hidden="true" />
-        ResolveOps
-      </div>
-
       <nav className="sidebar-nav" aria-label="Dashboard pages">
-        {pages.map((page) => (
+        <p className="sidebar-heading">Dashboard</p>
+        {pages.map(({ id, label, Icon }) => (
           <a
-            key={page.id}
-            href={`#/${page.id}`}
-            className={page.id === currentId ? "sidebar-link sidebar-link-active" : "sidebar-link"}
-            aria-current={page.id === currentId ? "page" : undefined}
+            key={id}
+            href={`#/${id}`}
+            className={id === currentId ? "sidebar-link sidebar-link-active" : "sidebar-link"}
+            aria-current={id === currentId ? "page" : undefined}
             onClick={(event) => {
               event.preventDefault();
-              onOpen(page.id);
+              onOpen(id);
             }}
           >
-            {page.label}
+            <Icon />
+            {label}
           </a>
         ))}
       </nav>
-
-      <div className="sidebar-user">
-        <p className="sidebar-email" title={session.email}>
-          {session.email}
-        </p>
-        <p className="sidebar-role">{roleLabel(session.role)}</p>
-        <button className="sidebar-logout" type="button" onClick={onLogOut}>
-          Log out
-        </button>
-      </div>
     </aside>
   );
 }

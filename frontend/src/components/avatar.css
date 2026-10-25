@@ -1,0 +1,49 @@
+.avatar {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 50%;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+  user-select: none;
+}
+
+.avatar-small {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.avatar-medium {
+  width: 32px;
+  height: 32px;
+  font-size: 12px;
+}
+
+/* Atlassian's avatar colours, all dark enough for white initials */
+.avatar-tone-0 { background-color: #0055cc; }
+.avatar-tone-1 { background-color: #216e4e; }
+.avatar-tone-2 { background-color: #5e4db2; }
+.avatar-tone-3 { background-color: #ae2e24; }
+.avatar-tone-4 { background-color: #206a83; }
+.avatar-tone-5 { background-color: #a54800; }
+.avatar-tone-6 { background-color: #943d73; }
+.avatar-tone-7 { background-color: #44546f; }
+
+.person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 200px;
+  white-space: nowrap;
+}
+
+.person-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.person-unknown {
+  color: var(--text-subtlest);
+}

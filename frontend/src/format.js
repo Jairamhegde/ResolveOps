@@ -30,6 +30,7 @@ const ROLE_LABELS = {
   software: "Software admin",
   iam: "Account access admin",
   other: "Other issues admin",
+  employee: "User",
 };
 
 export function roleLabel(role) {

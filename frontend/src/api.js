@@ -22,7 +22,7 @@ export async function login(email, password, kind) {
   }
 
   if (response.status === 401) {
-    throw new Error(`That email and password don't match an ${kind === "employee" ? "employee" : "admin"} account.`);
+    throw new Error(`That email and password don't match ${kind === "employee" ? "a user" : "an admin"} account.`);
   }
   if (!response.ok) {
     throw new Error("The server couldn't sign you in. Try again in a moment.");

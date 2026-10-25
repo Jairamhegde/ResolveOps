@@ -1,7 +1,10 @@
 """
 Create the dashboard demo accounts, or reset their passwords if they already exist:
-a super admin who sees everything, a network admin who only sees network tickets,
-and an employee who only sees the tickets they submitted.
+an admin who only sees network tickets, a super admin who sees everything,
+and a user who only sees the tickets they submitted.
+
+The user is a real Slack user who has already raised tickets, so they must be in the
+users table first (they are added the first time they run /helpdesk).
 
 Run it from the project root:
     python -m scripts.create_demo_admins
@@ -11,11 +14,11 @@ from backend.models import Admin, User
 from backendapi.routes.auth_routes import hash_password
 
 DEMO_ADMINS = [
-    {"email": "super@demo.com", "password": "demo-super-123", "role": "super_admin"},
     {"email": "network@demo.com", "password": "demo-network-123", "role": "network"},
+    {"email": "super@demo.com", "password": "demo-super-123", "role": "super_admin"},
 ]
 
-DEMO_EMPLOYEE = {"slack_id": "UDEMOEMPLOYEE", "name": "Demo Employee", "email": "employee@demo.com", "password": "demo-employee-123"}
+DEMO_USER = {"email": "jairamkansur@gmail.com", "password": "demo-user-123"}
 
 db = SessionLocal()
 
@@ -28,12 +31,13 @@ for demo in DEMO_ADMINS:
     db.add(admin)
     print(f"Demo {demo['role']} admin ready: {demo['email']}")
 
-employee = db.query(User).filter(User.email == DEMO_EMPLOYEE["email"]).first()
-if employee is None:
-    employee = User(slack_id=DEMO_EMPLOYEE["slack_id"], name=DEMO_EMPLOYEE["name"], email=DEMO_EMPLOYEE["email"])
-employee.password_hash = hash_password(DEMO_EMPLOYEE["password"])
-db.add(employee)
-print(f"Demo employee ready: {DEMO_EMPLOYEE['email']}")
+user = db.query(User).filter(User.email == DEMO_USER["email"]).first()
+if user is None:
+    print(f"No user with the email {DEMO_USER['email']}. Raise a ticket with /helpdesk in Slack first, then run this again.")
+else:
+    user.password_hash = hash_password(DEMO_USER["password"])
+    db.add(user)
+    print(f"Demo user ready: {DEMO_USER['email']}")
 
 db.commit()
 db.close()

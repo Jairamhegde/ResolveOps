@@ -27,11 +27,6 @@ class InsertTicket(BaseModel):
     flag: Flag = Flag.none
     needs_review: bool = False
 
-class CreateAdmin(BaseModel):
-    slack_id: str
-    email: str
-    role: str
-
 class CreateUser(BaseModel):
     slack_id: str
     name: str
@@ -51,6 +46,17 @@ class AdminType(str, Enum):
     iam = "iam"
     super_admin = "super_admin"
     other = "other"
+
+# The ticket category each admin type looks after. A super_admin has none: they see every category.
+# The `other` admin also owns spam and prompt-injection tickets, which are always saved as `other`.
+# Slack commands and the dashboard both read this, so they always agree.
+ADMIN_TYPE_CATEGORY = {
+    AdminType.hardware.value: Category.hardware.value,
+    AdminType.network.value: Category.network.value,
+    AdminType.software.value: Category.software.value,
+    AdminType.iam.value: Category.account_access.value,
+    AdminType.other.value: Category.other.value,
+}
 
 class ValidateAdmin(BaseModel):
     role: AdminType

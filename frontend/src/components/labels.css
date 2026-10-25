@@ -1,74 +1,85 @@
-/* Priority: a marker whose height grows with urgency, so it reads without colour too */
+/* Priority: an arrow whose shape says how urgent, so it reads without colour too */
 
 .priority {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  color: var(--ink-soft);
+  color: var(--text-subtle);
   white-space: nowrap;
 }
 
-.priority-marker {
-  width: 4px;
-  height: 6px;
-  border-radius: 1px;
-  background-color: var(--neutral);
+.priority-icon {
+  color: var(--text-subtlest);
 }
 
 .priority-number {
-  font-weight: 750;
-  font-stretch: var(--wide);
-  color: var(--ink);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
-.priority-critical .priority-marker {
-  height: 14px;
-  background-color: var(--critical);
+.priority-critical .priority-icon {
+  color: var(--danger);
 }
 
-.priority-high .priority-marker {
-  height: 11px;
-  background-color: var(--serious);
+.priority-high .priority-icon {
+  color: var(--orange);
 }
 
-.priority-medium .priority-marker {
-  height: 8px;
-  background-color: var(--warning);
+.priority-medium .priority-icon {
+  color: var(--medium);
 }
 
-/* Lozenges: tinted labels for status, flags and AI fixes */
+.priority-low .priority-icon,
+.priority-minimal .priority-icon {
+  color: var(--low);
+}
+
+/* Lozenges: Jira's small uppercase status labels */
 
 .lozenge {
-  --tone: var(--neutral);
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: 4px;
-  background-color: color-mix(in srgb, var(--tone) 14%, var(--paper));
-  color: color-mix(in srgb, var(--tone) 70%, var(--ink));
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.6;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 0 4px;
+  border-radius: 3px;
+  background-color: var(--neutral-subtle);
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
 .lozenge-good {
-  --tone: var(--good);
+  background-color: var(--success-subtle);
+  color: var(--success-text);
 }
 
 .lozenge-info {
-  --tone: var(--info);
+  background-color: var(--info-subtle);
+  color: var(--info-text);
 }
 
 .lozenge-warning {
-  --tone: var(--warning);
+  background-color: var(--warning-subtle);
+  color: var(--warning-text);
 }
 
 .lozenge-critical {
-  --tone: var(--critical);
+  background-color: var(--danger-subtle);
+  color: var(--danger-text);
 }
 
 .lozenge-ai {
-  background-color: var(--ai);
-  color: var(--ai-ink);
+  background-color: var(--ai-subtle);
+  color: var(--ai-text);
+}
+
+.lozenge .icon {
+  width: 11px;
+  height: 11px;
 }

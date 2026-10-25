@@ -1,6 +1,6 @@
 import "./metrics.css";
 
-// A row of headline numbers in one strip, divided by rules.
+// A row of headline numbers, one card each, like the gadgets on a Jira dashboard.
 export function MetricStrip({ label, children }) {
   return (
     <section className="metric-strip" aria-label={label}>
@@ -9,7 +9,7 @@ export function MetricStrip({ label, children }) {
   );
 }
 
-// One number. `ai` marks a number the AI produced with the saffron used for everything the AI does.
+// One number. `ai` marks a number the AI produced with the magenta used for everything the AI does.
 // `alert` marks a number that needs someone's attention when it isn't zero.
 export function Metric({ label, value, detail, ai = false, alert = false }) {
   let className = "metric";

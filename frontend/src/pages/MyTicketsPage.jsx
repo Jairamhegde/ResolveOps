@@ -8,30 +8,19 @@ import { BarList } from "../components/Charts";
 import { ErrorMessage, Loading, Section } from "../components/Section";
 import TicketTable from "../components/TicketTable";
 import TicketDetails from "../components/TicketDetails";
+import TopBar from "../components/TopBar";
 import "./myticketspage.css";
 
-// What a signed-in employee sees: their totals, the priority of their tickets, and every ticket they submitted.
 function MyTicketsPage({ token, session, onLogOut }) {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const mine = useApi(() => fetchMyTickets(token), [token], 30000);
 
   return (
     <div className="employee-app">
-      <header className="employee-bar">
-        <div className="sidebar-brand">
-          <span className="brand-mark" aria-hidden="true" />
-          ResolveOps
-        </div>
-        <div className="employee-bar-user">
-          <span>{session.name || session.email}</span>
-          <button className="sidebar-logout" type="button" onClick={onLogOut}>
-            Log out
-          </button>
-        </div>
-      </header>
+      <TopBar session={session} onLogOut={onLogOut} />
 
       <main className="page employee-page" id="content">
-        <PageHeader title="My tickets" subtitle="Everything you raised with /ticket in Slack, and what happened to it" />
+        <PageHeader title="My tickets" subtitle="Everything you raised with /helpdesk in Slack, and what happened to it" />
 
         {mine.error && <ErrorMessage message={mine.error} onRetry={mine.reload} />}
         {!mine.data && !mine.error && <Loading />}
@@ -75,7 +64,7 @@ function MyTickets({ data, selectedId, onSelect }) {
             onSelect={onSelect}
             selectedId={selectedId}
             showReporter={false}
-            emptyMessage="You haven't raised any tickets yet. Type /ticket and describe the problem in Slack."
+            emptyMessage="You haven't raised any tickets yet. Type /helpdesk and describe the problem in Slack."
           />
         </Section>
       </div>

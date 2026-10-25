@@ -1,4 +1,5 @@
 import { FlagLabel, PriorityLabel, StatusLabel } from "./Labels";
+import { Person } from "./Avatar";
 import { categoryLabel, formatTimestamp, ticketKey, timeAgo } from "../format";
 import "./tickettable.css";
 
@@ -39,7 +40,11 @@ function TicketTable({ tickets, onSelect, selectedId, showReporter = true, empty
                 </span>
                 <FlagLabel flag={ticket.flag} />
               </td>
-              {showReporter && <td className="cell-muted">{ticket.reporter || "Unknown"}</td>}
+              {showReporter && (
+                <td>
+                  <Person name={ticket.reporter} />
+                </td>
+              )}
               <td className="cell-muted">{categoryLabel(ticket.category)}</td>
               <td>
                 <PriorityLabel priority={ticket.priority} />

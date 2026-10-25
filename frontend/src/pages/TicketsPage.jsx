@@ -7,6 +7,7 @@ import CategoryPicker from "../components/CategoryPicker";
 import { ErrorMessage, Loading, Section } from "../components/Section";
 import TicketTable from "../components/TicketTable";
 import TicketDetails from "../components/TicketDetails";
+import { SearchIcon } from "../components/Icons";
 import "./ticketspage.css";
 
 // The quick filters above the table. Each is a test a ticket passes or fails.
@@ -52,14 +53,17 @@ function TicketsPage({ token, isSuperAdmin }) {
           title={`${shownTickets.length} ${shownTickets.length === 1 ? "ticket" : "tickets"}`}
           flush
           actions={
-            <input
-              className="field-control ticket-search"
-              type="search"
-              placeholder="Search text, RO-12 or a name"
-              aria-label="Search tickets"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+            <div className="ticket-search-box">
+              <SearchIcon />
+              <input
+                className="field-control ticket-search"
+                type="search"
+                placeholder="Search text, RO-12 or a name"
+                aria-label="Search tickets"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
           }
         >
           <div className="view-tabs" role="group" aria-label="Show">

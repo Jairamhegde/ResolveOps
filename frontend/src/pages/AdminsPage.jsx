@@ -4,6 +4,7 @@ import { CATEGORIES, categoryLabel, roleLabel } from "../format";
 import PageHeader from "../components/PageHeader";
 import { Metric, MetricStrip } from "../components/Metrics";
 import { ErrorMessage, Loading, Section } from "../components/Section";
+import Avatar from "../components/Avatar";
 import "./adminspage.css";
 
 // Who the admins are, which field each looks after, and how much open work is in that field. Super admins only.
@@ -59,8 +60,13 @@ function AdminList({ admins }) {
               {admins.map((admin) => (
                 <tr key={admin.id}>
                   <td>
-                    <p className="admin-name">{admin.name || admin.email}</p>
-                    {admin.name && <p className="admin-email">{admin.email}</p>}
+                    <div className="admin-who">
+                      <Avatar name={admin.name || admin.email} size="medium" />
+                      <div>
+                        <p className="admin-name">{admin.name || admin.email}</p>
+                        {admin.name && <p className="admin-email">{admin.email}</p>}
+                      </div>
+                    </div>
                   </td>
                   <td>
                     {roleLabel(admin.role)}

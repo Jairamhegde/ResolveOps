@@ -1,6 +1,6 @@
 # ResolveOps
 
-**An AI-triaged IT helpdesk and DevOps notifier that lives inside Slack, with a live analytics dashboard.**
+**An AI-triaged IT helpdesk backend for slack, with a live analytics dashboard.**
 
 Employees file issues with a slash command. Gemini classifies, prioritizes, and suggests a fix in seconds. Simple issues are offered a self-service fix with **Resolved / Not resolved** buttons, and anything the fix doesn't solve goes to the right IT admin. A background SLA engine escalates anything left unresolved, and a React dashboard shows how many tickets the AI solved on its own. GitHub activity (pushes, PRs, and CI runs) is posted to per-repo Slack channels.
 
@@ -10,7 +10,7 @@ Employees file issues with a slash command. Gemini classifies, prioritizes, and 
 |---|---|
 | **Dashboard** | [ResolveOps](https://resolveops-1.onrender.com) (the demo login is filled in, just click **Sign in**) |
 | **Backend** | [Health check](https://resolveops.onrender.com/api/health) |
-| **Slack** | [Join the Slack workspace](https://join.slack.com/t/solver-g678160/shared_invite/zt-47kxbtf9z-je55g8UYaiSfeaDa2xQCLQ) and try `/ticket my laptop won't connect to wifi` |
+| **Slack** | [Join the Slack workspace](https://join.slack.com/t/solver-g678160/shared_invite/zt-47kxbtf9z-je55g8UYaiSfeaDa2xQCLQ) and try `/helpdesk my laptop won't connect to wifi` |
 
 > Free-tier Render host: open the health check first to wake the backend up (~30s cold start).
 
@@ -20,7 +20,7 @@ Employees file issues with a slash command. Gemini classifies, prioritizes, and 
   <img src="images/architecture.png" alt="ResolveOps architecture: Slack requests pass an HMAC check and a fast webhook route, then a background task triages with Gemini, routes the ticket and saves it to PostgreSQL" width="100%">
 </p>
 
-Every Slack request passes the HMAC check and is acknowledged within 3 seconds. `/ticket` is triaged by Gemini and either gets a self-service fix or goes to the admin queue for its category; admin commands check the admin's role first. The SLA scheduler escalates overdue tickets every 15 minutes. Not shown: GitHub webhooks (HMAC check, then a card in the repo's Slack channel) and the dashboard (JWT login, then read-only queries).
+Every Slack request passes the HMAC check and is acknowledged within 3 seconds. `/helpdesk` is triaged by Gemini and either gets a self-service fix or goes to the admin queue for its category; admin commands check the admin's role first. The SLA scheduler escalates overdue tickets every 15 minutes. Not shown: GitHub webhooks (HMAC check, then a card in the repo's Slack channel) and the dashboard (JWT login, then read-only queries).
 
 ---
 
@@ -28,14 +28,14 @@ Every Slack request passes the HMAC check and is acknowledged within 3 seconds. 
 
 | | |
 |---|---|
-| **AI triage** | `/ticket <issue>` uses Gemini 2.5 Flash with a strict JSON response schema to assign a category, a priority (1–5), a flag, and a suggested fix. |
+| **AI triage** | `/helpdesk <issue>` uses Gemini 2.5 Flash with a strict JSON response schema to assign a category, a priority (1–5), a flag, and a suggested fix. |
 | **Self-service fixes** | Low-risk tickets (P3–P5, not hardware or account access) get the AI's suggested fix with **Resolved** / **Not resolved** buttons. Resolved closes the ticket as solved by the AI; Not resolved sends it to IT support. Urgent, hardware and account-access tickets go straight to IT. |
 | **Interactive buttons** | Slack button clicks hit `/webhook/interactions`. Only the person who raised a ticket can answer its fix buttons, and a ticket that was already answered is ignored, so double clicks are safe. `/listissue` shows each ticket as a card with its own **Resolve** button. |
 | **Pending-response timeout** | If the user never answers the fix buttons, the ticket is moved to IT support after 5 hours. |
-| **Prompt-injection guard** | User text is wrapped in `<user_text>` tags and treated as untrusted data. The AI flags each ticket as `none`, `unclear`, `spam` or `injection`; flagged tickets skip the self-service fix and are marked `needs_review` for an admin. If the AI call fails, the ticket is flagged `ai_failed` and still reaches IT. |
+| **Prompt-injection guard** | User text is wrapped in `<user_text>` tags and treated as untrusted data. The AI flags each ticket as `none`, `unclear`, `spam` or `injection`; flagged tickets skip the self-service fix and are marked `needs_review` for an admin. Spam and injection tickets are always filed under `other`, so the `other` admin reviews them. If the AI call fails, the ticket is flagged `ai_failed` and still reaches IT. |
 | **SLA auto-escalation** | APScheduler runs every 15 minutes and bumps the priority of any ticket that breaches its window (P2: 2h, P3: 6h, P4: 12h, P5: 24h). |
-| **Admin types** | Admins are `hardware`, `network`, `software`, `iam`, `other` or `super_admin`. Each admin only sees and resolves tickets in their own category; a `super_admin` sees every ticket and is the only one who can add admins. |
-| **Analytics dashboard** | A React + Recharts dashboard behind a JWT login, with separate views for an employee, a category admin and the super admin. See [Dashboard](#dashboard). |
+| **Admin types** | Admins are `hardware`, `network`, `software`, `iam`, `other` or `super_admin`. Each admin only sees and resolves tickets in their own category (the `other` admin also owns spam and injection tickets); a `super_admin` sees every ticket and is the only one who can add admins. |
+| **Analytics dashboard** | A React dashboard behind a JWT login, with separate views for an employee, a category admin and the super admin. See [Dashboard](#dashboard). |
 | **Abuse protection** | Users are auto-registered on first use, and each user has a daily cap on tickets. |
 | **GitHub → Slack** | Push, pull request, and `workflow_run` events are routed to each repo's Slack channel as Block Kit cards with a link back to GitHub. |
 | **Request security** | HMAC verification of Slack signatures (with replay protection) and GitHub `X-Hub-Signature-256`. Invalid requests get a 403. Dashboard passwords are hashed with bcrypt. |
@@ -46,7 +46,7 @@ Every Slack request passes the HMAC check and is acknowledged within 3 seconds. 
 
 ```mermaid
 flowchart LR
-    T["/ticket"] --> AI[Gemini triage]
+    T["/helpdesk"] --> AI[Gemini triage]
     AI -->|flagged or AI failed| A[active + needs_review]
     AI -->|P1–P2, hardware, account access| B[active]
     AI -->|everything else| P[pending_response<br/>fix + buttons]
@@ -54,17 +54,28 @@ flowchart LR
     P -->|Not resolved / no answer in 5h| B
     A --> AD[Admin: /listissue → Resolve]
     B --> AD
-    AD --> R2[resolved by admin]
+    AD --> W[awaiting_user<br/>user confirms in DM]
+    W -->|Resolved| R2[resolved by admin]
+    W -->|Not resolved| B
 ```
+
+## Demo
+
+<p align="center">
+  <a href="images/demo.mp4">
+    <img src="images/demo.gif" alt="Demo: raising tickets in Slack, getting the AI's suggested fix with Resolved / Not resolved buttons, a prompt-injection attempt being blocked, the daily ticket limit, and the tickets appearing on the dashboard" width="100%">
+  </a>
+</p>
+<p align="center"><em>Raising tickets in Slack, the AI's suggested fix, a blocked prompt-injection attempt, and the dashboard (shown at 3× speed). <a href="images/demo.mp4">Watch the full video</a>.</em></p>
 
 ## Slack Commands
 
 | Command | Who | What it does |
 |---|---|---|
-| `/ticket <issue>` | Anyone | Raise a ticket. The AI triages it and replies with a fix or a confirmation. |
-| `/listissue` | Admins | Active tickets for your admin type, sorted by priority, each with a **Resolve** button. |
-| `/resolve <id>` | Admins | Resolve a ticket by ID. |
-| `/add-admin @user <admin_type>` | `super_admin` | Make a user an admin of the given type. |
+| `/helpdesk <issue>` | Anyone | Raise a ticket. The AI triages it and replies with a suggested fix (with **Resolved** / **Not resolved** buttons) or a confirmation that it went to IT. Up to 5 per person per day. |
+| `/listissue` | Admins | The 12 most urgent active tickets for your admin type (all categories for a `super_admin`), each with a **Resolve** button. |
+| `/resolve <id>` | Admins | Mark a ticket in your category as fixed. The person who raised it gets a DM and confirms with **Resolved** (closes it) or **Not resolved** (back to the queue). |
+| `/add-admin @user <admin_type>` | `super_admin` | Make a user an admin. Types: `hardware`, `network`, `software`, `iam`, `other`, `super_admin`. |
 
 <p align="center">
   <img src="images/slack-commands.png" alt="ResolveOps slash commands in the Slack help-desk channel" width="75%">
@@ -78,7 +89,7 @@ Slack sends slash commands as form-encoded fields (`user_id`, `user_name`, `text
 
 Admins sign in with an email and password. The backend checks the bcrypt hash and returns a JWT that is valid for 8 hours; every dashboard request sends it as `Authorization: Bearer <token>`, and an expired token sends the user back to the login page.
 
-**Employees** can sign in too (pick *Employee* on the login page). They get one page, **My tickets**: total tickets, solved (by the AI or by IT), still open, how many were high priority, the priority of every ticket, and every ticket they submitted with its details. Their token is marked as an employee token, so it can't be used on any admin endpoint, and an admin token can't be used as an employee's. An employee needs a `password_hash` in `user_details` (added by migration `7c3e1f0a9b2d`) to sign in.
+**Employees** can sign in too (pick *User* on the login page). They get one page, **My tickets**: total tickets, solved (by the AI or by IT), still open, how many were high priority, the priority of every ticket, and every ticket they submitted with its details. Their token is marked as an employee token, so it can't be used on any admin endpoint, and an admin token can't be used as an employee's. An employee needs a `password_hash` in `user_details` (added by migration `7c3e1f0a9b2d`) to sign in.
 
 What an admin sees depends on their type. A **category admin** (network, hardware, software, iam, other) only ever sees tickets in their own category; the backend enforces this, so asking for another category returns their own. A **super admin** sees every category, can filter to one, and has an extra **Admins** page.
 
@@ -89,20 +100,36 @@ What an admin sees depends on their type. A **category admin** (network, hardwar
 | **Employees** | All admins | One employee's tickets raised, solved, still open and high severity, their P1–P2 tickets with timestamps, and all their tickets. |
 | **Admins** | Super admin | Every admin, the field they look after, whether they can sign in to the dashboard, and the open, high-severity and closed tickets in their field. Flags fields that have no admin. |
 
-The demo has three accounts, created by `python -m scripts.create_demo_admins`: `super@demo.com` / `demo-super-123`, `network@demo.com` / `demo-network-123` and the employee `employee@demo.com` / `demo-employee-123`. The login page fills any of them in with one click.
+The demo has three sign-in roles, set up by `python -m scripts.create_demo_admins`: **Admin** (`network@demo.com` / `demo-network-123`, sees network tickets only), **Super admin** (`super@demo.com` / `demo-super-123`, sees everything) and **User** (`jairamkansur@gmail.com` / `demo-user-123`, sees their own Slack tickets). The login page fills any of them in with one click.
+
+<p align="center">
+  <img src="images/dashboard-login.png" alt="Sign-in page with the three roles: Admin, Super admin and User, with the demo details filled in" width="100%">
+</p>
+<p align="center"><em>Sign in as an Admin, a Super admin or a User.</em></p>
 
 <p align="center">
   <img src="images/dashboard-super-admin.png" alt="Super admin overview: AI deflection rate, active, closed, high severity and needs-review counts, where tickets stand, tickets per day, counts by priority and category, and open P1 and P2 tickets" width="100%">
 </p>
-<p align="center"><em>The super admin overview (sample data).</em></p>
+<p align="center"><em>The super admin overview, across every category.</em></p>
 
 <p align="center">
-  <img src="images/dashboard-tickets.png" alt="Tickets page with quick filters and the details panel of one ticket: priority, category, who raised it, timestamps, SLA countdown and the AI suggested fix" width="49%">
-  <img src="images/dashboard-user.png" alt="Employee My tickets page: total, solved, still open and high priority counts, the priority of each ticket, and every ticket submitted" width="49%">
+  <img src="images/dashboard-admin.png" alt="Network admin overview: the same metrics and charts limited to network tickets, and the open P1 and P2 network tickets" width="100%">
 </p>
-<p align="center"><em>Left: a ticket's details. Right: an employee's own tickets.</em></p>
+<p align="center"><em>An admin's overview, limited to the field they look after (network).</em></p>
 
-It supports light and dark mode and works at phone width. The frontend is plain React with no chart library: the charts are CSS bars. Each piece (`Sidebar`, `Metrics`, `TicketTable`, `TicketDetails`, `Charts`, …) is a component with its own CSS file, and every page loads its data through one small `useApi` hook.
+<p align="center">
+  <img src="images/dashboard-tickets.png" alt="Tickets page with quick filters and the details panel of one ticket: priority, category, who raised it, timestamps and the AI suggested fix" width="49%">
+  <img src="images/dashboard-admins.png" alt="Admins page: every admin, the field they look after, how they sign in, and the open, high-severity and closed tickets in their field" width="49%">
+</p>
+<p align="center"><em>Left: a ticket's details. Right: the admins page (super admin only).</em></p>
+
+<p align="center">
+  <img src="images/dashboard-user.png" alt="User My tickets page: total, solved, still open and high priority counts, the priority of each ticket, and every ticket submitted" width="49%">
+  <img src="images/dashboard-dark.png" alt="The super admin overview in the dark theme" width="49%">
+</p>
+<p align="center"><em>Left: a user's own tickets. Right: the dark theme.</em></p>
+
+It opens as a white dashboard with a switch to a dark theme in the top bar, and works at phone width. The frontend is plain React with no chart library: the charts are CSS bars. Each piece (`Sidebar`, `Metrics`, `TicketTable`, `TicketDetails`, `Charts`, …) is a component with its own CSS file, and every page loads its data through one small `useApi` hook.
 
 ### Dashboard API
 
@@ -132,8 +159,8 @@ Tests run against a **SQLite test database** (`testing/test.db`), never the real
 
 | File | What it covers |
 |---|---|
-| `test_admin_tickets.py` | Admin types: who can `/resolve` and `/listissue` which categories, super admin access, `add_admin`, the super-admin check, ticket creation when the AI answers and when it fails |
-| `test_crud.py` | The `/ticket` background job: saves the ticket, registers a first-time user, and still replies "Server is not active." in Slack when something crashes |
+| `test_admin_tickets.py` | Admin types: who can `/resolve` and `/listissue` which categories, super admin access, `add_admin`, the super-admin check, the `other` admin listing and resolving `other` tickets, spam and injection routed to `other`, ticket creation when the AI answers and when it fails |
+| `test_crud.py` | The `/helpdesk` background job: saves the ticket, registers a first-time user, and still replies "Server is not active." in Slack when something crashes |
 | `test_dashboard_queries.py` | Dashboard metrics, category and employee scopes, P1–P5 and per-day counts with gaps filled, that a category admin can't see other categories, and the admin list's workload numbers |
 | `test_employee_login.py` | Employee login, that an employee only sees their own tickets, and that employee and admin tokens can't be swapped |
 | `test_ai_response.py` | The real Gemini triage: response shape, category, and that non-IT messages are flagged (marked `ai`) |
@@ -179,7 +206,7 @@ frontend/src/
 └── components/      # Navbar, LoginPage, StatCard, BarChartCard, TicketCard, … (each with its own CSS)
 alembic/             # Database migrations
 scripts/
-└── create_demo_admins.py  # Creates the demo super admin for the dashboard
+└── create_demo_admins.py  # Creates the demo Admin, Super admin and User logins
 testing/
 ├── test_database.py       # SQLite test database, rebuilt from the models on every run
 ├── test_admin_tickets.py
@@ -196,7 +223,7 @@ git clone https://github.com/<your-username>/ResolveOps.git && cd ResolveOps
 pip install -r requirements.txt
 # .env → DATABASE_URL, GEMINI_API, BOT_AUTH_TOKEN, SIGNING_SECRET, GITHUB_SECRET, JWT_SECRET, FRONTEND_URL
 alembic upgrade head
-python -m scripts.create_demo_admins       # dashboard login: super@demo.com
+python -m scripts.create_demo_admins       # dashboard logins: Admin, Super admin, User
 uvicorn backend.main:app --reload
 
 pytest

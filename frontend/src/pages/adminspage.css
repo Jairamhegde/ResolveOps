@@ -1,14 +1,22 @@
 .admin-table td {
-  vertical-align: top;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.admin-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .admin-name {
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .admin-email {
-  font-size: 13px;
-  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-subtlest);
 }
 
 .cell-number {
@@ -21,10 +29,9 @@
 }
 
 .admin-table td.cell-number {
-  font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .cell-alert {
-  color: var(--critical);
+  color: var(--danger-text);
 }

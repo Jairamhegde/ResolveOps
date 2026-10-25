@@ -5,22 +5,23 @@
 .ticket-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
 }
 
 .ticket-table th {
   padding: 8px 12px;
-  border-bottom: 1px solid var(--rule);
-  color: var(--muted);
+  border-top: 1px solid var(--border);
+  border-bottom: 2px solid var(--border);
+  color: var(--text-subtlest);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   text-align: left;
   white-space: nowrap;
 }
 
 .ticket-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--rule);
+  height: 48px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
 
@@ -30,6 +31,7 @@
 
 .ticket-row {
   cursor: pointer;
+  transition: background-color 80ms;
 }
 
 .ticket-row:hover {
@@ -38,23 +40,27 @@
 
 .ticket-row-selected,
 .ticket-row-selected:hover {
-  background-color: color-mix(in srgb, var(--info) 9%, var(--paper));
+  background-color: var(--selected);
 }
 
 .ticket-row:focus-visible {
   outline-offset: -2px;
 }
 
+/* The key reads as a link, like an issue key in Jira */
 .cell-key {
-  color: var(--ink-soft);
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
+  color: var(--brand-text);
+  font-weight: 500;
   white-space: nowrap;
 }
 
+.ticket-row:hover .cell-key {
+  text-decoration: underline;
+}
+
 .cell-summary {
-  min-width: 220px;
-  max-width: 420px;
+  min-width: 240px;
+  max-width: 440px;
 }
 
 .summary-text {
@@ -62,14 +68,12 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .summary-missing {
-  color: var(--muted);
+  color: var(--text-subtlest);
   font-style: italic;
-  font-weight: 400;
 }
 
 .cell-summary .lozenge {
@@ -77,18 +81,19 @@
 }
 
 .cell-muted {
-  color: var(--ink-soft);
+  color: var(--text-subtle);
   white-space: nowrap;
 }
 
 .cell-time {
-  color: var(--ink-soft);
+  color: var(--text-subtle);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .table-empty {
-  padding: 32px 16px;
-  color: var(--muted);
+  padding: 40px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text-subtlest);
   text-align: center;
 }

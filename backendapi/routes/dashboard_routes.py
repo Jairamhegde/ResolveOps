@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models import Admin, User
-from backend.schemas import AdminType, Category
+from backend.schemas import ADMIN_TYPE_CATEGORY, AdminType, Category
 from backendapi.routes.auth_routes import get_current_admin, get_current_employee
 from backendapi.queries.ticket_queries import (
     count_by_category,
@@ -19,15 +19,6 @@ from backendapi.queries.ticket_queries import (
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
-# The ticket category each admin type looks after. A super admin sees every category.
-ADMIN_CATEGORY = {
-    AdminType.network.value: Category.network.value,
-    AdminType.hardware.value: Category.hardware.value,
-    AdminType.software.value: Category.software.value,
-    AdminType.iam.value: Category.account_access.value,
-    AdminType.other.value: Category.other.value,
-}
-
 
 def is_super_admin(admin: Admin) -> bool:
     return admin.role == AdminType.super_admin.value
@@ -38,7 +29,7 @@ def category_for(admin: Admin, requested: Category | None) -> str | None:
     if is_super_admin(admin):
         return requested.value if requested else None
 
-    category = ADMIN_CATEGORY.get(admin.role)
+    category = ADMIN_TYPE_CATEGORY.get(admin.role)
     if category is None:
         raise HTTPException(status_code=403, detail=f"Admin type '{admin.role}' is not linked to a ticket category")
     return category
@@ -109,7 +100,7 @@ def get_admins(db: Session = Depends(get_db), admin: Admin = Depends(get_current
 
 def admin_to_dict(db: Session, admin: Admin, name: str | None) -> dict:
     """One row of the admin list. Workload numbers are None for a super admin, who has no single category."""
-    category = ADMIN_CATEGORY.get(admin.role)
+    category = ADMIN_TYPE_CATEGORY.get(admin.role)
     row = {
         "id": admin.id,
         "name": name,

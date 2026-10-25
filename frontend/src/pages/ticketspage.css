@@ -1,47 +1,82 @@
-.ticket-search {
+.ticket-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
   width: min(280px, 100%);
 }
 
+.ticket-search-box .icon {
+  position: absolute;
+  left: 8px;
+  color: var(--text-subtlest);
+  pointer-events: none;
+}
+
+.ticket-search-box .ticket-search {
+  width: 100%;
+  padding-left: 30px;
+}
+
+/* Quick filters, as Jira-style tabs with a blue underline */
 .view-tabs {
   display: flex;
   gap: 4px;
   margin: 0 -20px;
   padding: 0 20px;
-  border-bottom: 1px solid var(--rule);
   overflow-x: auto;
 }
 
 .view-tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 9px;
+  min-height: 40px;
+  padding: 0 8px;
   border: 0;
-  border-bottom: 2px solid transparent;
   background: none;
-  color: var(--ink-soft);
-  font-weight: 600;
+  color: var(--text-subtle);
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .view-tab:hover {
-  color: var(--ink);
+  color: var(--text);
 }
 
-.view-tab-active {
-  border-bottom-color: var(--ink);
-  color: var(--ink);
+.view-tab-active,
+.view-tab-active:hover {
+  color: var(--brand-text);
+}
+
+.view-tab-active::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background-color: var(--brand);
 }
 
 .view-tab-count {
-  min-width: 22px;
+  min-width: 20px;
   padding: 0 6px;
-  border-radius: 10px;
-  background-color: var(--hover);
+  border-radius: 8px;
+  background-color: var(--sunken);
+  color: var(--text-subtle);
   font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
   text-align: center;
+}
+
+.view-tab-active .view-tab-count {
+  background-color: var(--selected);
+  color: var(--brand-text);
 }
 
 @media (max-width: 600px) {
@@ -50,11 +85,7 @@
     padding: 0 14px;
   }
 
-  .section-flush .section-header {
-    flex-direction: column;
-  }
-
-  .ticket-search {
+  .ticket-search-box {
     width: 100%;
   }
 }

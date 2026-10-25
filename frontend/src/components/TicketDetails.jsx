@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { AiLabel, FlagLabel, PriorityLabel, StatusLabel } from "./Labels";
+import { Person } from "./Avatar";
+import { CloseIcon, SparkleIcon } from "./Icons";
 import { categoryLabel, formatTimestamp, slaText, ticketKey, timeAgo } from "../format";
 import "./ticketdetails.css";
 
@@ -10,7 +12,7 @@ function resolvedByText(ticket) {
   return ticket.resolved_by ? `IT admin (${ticket.resolved_by})` : "IT admin";
 }
 
-// Everything about one ticket, in a panel on the right. Escape or the Close button closes it.
+// Everything about one ticket, in a panel on the right like Jira's issue view. Escape or Close closes it.
 function TicketDetails({ ticket, onClose }) {
   useEffect(() => {
     const onKey = (event) => event.key === "Escape" && onClose();
@@ -30,55 +32,65 @@ function TicketDetails({ ticket, onClose }) {
         onClick={(event) => event.stopPropagation()}
       >
         <header className="details-header">
-          <p className="details-key">{ticketKey(ticket)}</p>
-          <button className="button" type="button" onClick={onClose} autoFocus>
-            Close
+          <p className="details-key">IT Support / {ticketKey(ticket)}</p>
+          <button className="button button-subtle details-close" type="button" onClick={onClose} autoFocus aria-label="Close">
+            <CloseIcon />
           </button>
         </header>
 
-        <h2 id="details-title" className="details-title">
-          {ticket.issue_text || "No description given"}
-        </h2>
+        <div className="details-body">
+          <h2 id="details-title" className="details-title">
+            {ticket.issue_text || "No description given"}
+          </h2>
 
-        <div className="details-labels">
-          <StatusLabel status={ticket.status} />
-          {ticket.resolved_by === "ai" && <AiLabel />}
-          <FlagLabel flag={ticket.flag} />
+          <div className="details-labels">
+            <StatusLabel status={ticket.status} />
+            {ticket.resolved_by === "ai" && <AiLabel />}
+            <FlagLabel flag={ticket.flag} />
+          </div>
+
+          <section className="details-fix">
+            <h3 className="details-fix-title">
+              <SparkleIcon />
+              AI suggested fix
+            </h3>
+            <p>{ticket.suggested_fix || "No fix suggested. This ticket went straight to IT support."}</p>
+          </section>
+
+          {sla && <p className="details-sla">{sla}</p>}
+
+          <section className="details-panel">
+            <h3 className="details-panel-title">Details</h3>
+            <dl className="details-fields">
+              <dt>Priority</dt>
+              <dd>
+                <PriorityLabel priority={ticket.priority} />
+              </dd>
+
+              <dt>Category</dt>
+              <dd>{categoryLabel(ticket.category)}</dd>
+
+              <dt>Raised by</dt>
+              <dd>
+                <Person name={ticket.reporter} />
+              </dd>
+
+              <dt>Created</dt>
+              <dd>
+                {formatTimestamp(ticket.created_at)} <span className="details-muted">({timeAgo(ticket.created_at)})</span>
+              </dd>
+
+              <dt>Last escalated</dt>
+              <dd>{ticket.escalated_at ? formatTimestamp(ticket.escalated_at) : "Never"}</dd>
+
+              <dt>Resolved by</dt>
+              <dd>{resolvedByText(ticket)}</dd>
+
+              <dt>Needs review</dt>
+              <dd>{ticket.needs_review ? "Yes, held by the AI guard" : "No"}</dd>
+            </dl>
+          </section>
         </div>
-
-        <dl className="details-fields">
-          <dt>Priority</dt>
-          <dd>
-            <PriorityLabel priority={ticket.priority} />
-          </dd>
-
-          <dt>Category</dt>
-          <dd>{categoryLabel(ticket.category)}</dd>
-
-          <dt>Raised by</dt>
-          <dd>{ticket.reporter || "Unknown"}</dd>
-
-          <dt>Created</dt>
-          <dd>
-            {formatTimestamp(ticket.created_at)} <span className="details-muted">({timeAgo(ticket.created_at)})</span>
-          </dd>
-
-          <dt>Last escalated</dt>
-          <dd>{ticket.escalated_at ? formatTimestamp(ticket.escalated_at) : "Never"}</dd>
-
-          <dt>Resolved by</dt>
-          <dd>{resolvedByText(ticket)}</dd>
-
-          <dt>Needs review</dt>
-          <dd>{ticket.needs_review ? "Yes, held by the AI guard" : "No"}</dd>
-        </dl>
-
-        {sla && <p className="details-sla">{sla}</p>}
-
-        <section className="details-fix">
-          <h3 className="details-fix-title">AI suggested fix</h3>
-          <p>{ticket.suggested_fix || "No fix suggested. This ticket went straight to IT support."}</p>
-        </section>
       </aside>
     </div>
   );

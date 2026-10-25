@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from logger import logger
 from backend.database import SessionLocal
 from backend.models import User, Ticket, Admin, utc_now_naive
-from backend.schemas import InsertTicket, CreateAdmin, CreateUser, AdminType, Category
+from backend.schemas import InsertTicket, CreateUser, AdminType, Category, Flag, ADMIN_TYPE_CATEGORY
 from backend.ai import get_ai_data
 from backend.auth import is_admin_in_database
 from backend.slack_blocks import (
@@ -27,13 +27,6 @@ SLACK_USER_INFO_URL = "https://slack.com/api/users.info"
 SLACK_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
 
 LIST_ISSUE_LIMIT = 12
-
-ADMIN_TYPE_TO_TICKET_CATEGORY = {
-    AdminType.hardware.value: Category.hardware.value,
-    AdminType.network.value: Category.network.value,
-    AdminType.software.value: Category.software.value,
-    AdminType.iam.value: Category.account_access.value,
-}
 
 async def send_slack_response(response_url: str, payload: dict):
     """Post a message back to Slack via the slash command's response_url."""
@@ -100,22 +93,6 @@ def insert_to_ticket(db: Session, details: InsertTicket):
         db.rollback()
         logger.error(f"Ticket insertion failed for user {details.slack_id}: {e}")
         return None
-
-
-def insert_admin(db: Session, details: CreateAdmin):
-    new_admin = Admin(
-        slack_id=details.slack_id,
-        email=details.email,
-        role=details.role
-    )
-
-    try:
-        db.add(new_admin)
-        db.commit()
-        logger.info(f"Admin {details.slack_id} inserted with role '{details.role}'")
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Admin insertion failed for {details.slack_id}: {e}")
 
 
 def insert_user(db: Session, details: CreateUser):
@@ -187,6 +164,10 @@ async def create_ticket(db: Session, user_id: str, issue_text: str, user_name: s
     suggested_fix = ai_response.get('suggested_fix')
     logger.info(f"AI classified ticket from {user_id}: category={category}, priority={priority}")
 
+    # Spam and prompt-injection attempts are owned by the `other` admin, whatever the AI thought the issue was.
+    if flag in (Flag.spam.value, Flag.injection.value):
+        category = Category.other.value
+
     if not ai_response:
         status, priority, category, suggested_fix, flag, needs_review = 'active', 3, 'other', None, 'ai_failed', True
     elif flag != 'none':
@@ -237,7 +218,7 @@ async def insert_ticket_background(user_id: str, issue_text: str, user_name: str
         
     finally:
         db.close()
-    await send_slack_response(response_url, build_command_reply(f"/ticket {issue_text or ''}", payload))
+    await send_slack_response(response_url, build_command_reply(f"/helpdesk {issue_text or ''}", payload))
     
     return succeded
 
@@ -291,7 +272,7 @@ def can_admin_handle_ticket(admin: Admin, ticket: Ticket) -> bool:
     if admin.role == AdminType.super_admin.value:
         return True
 
-    admin_category = ADMIN_TYPE_TO_TICKET_CATEGORY.get(admin.role)
+    admin_category = ADMIN_TYPE_CATEGORY.get(admin.role)
     return admin_category is not None and admin_category == ticket.category
 
 
@@ -396,7 +377,7 @@ def list_tickets_for_admin(db: Session, admin_slack_id: str) -> dict:
     ticket_filters = [Ticket.status == 'active']
 
     if admin.role != AdminType.super_admin.value:
-        ticket_category = ADMIN_TYPE_TO_TICKET_CATEGORY.get(admin.role)
+        ticket_category = ADMIN_TYPE_CATEGORY.get(admin.role)
         if ticket_category is None:
             logger.warning(f"Admin {admin_slack_id} has unknown admin type '{admin.role}'")
             return {"text": f"Your admin type `{admin.role}` is not linked to any ticket category. Ask a super_admin to update it."}
